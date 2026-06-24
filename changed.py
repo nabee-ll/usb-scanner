@@ -576,6 +576,17 @@ def handle_usb_device(device):
         # Generate the PDF Report
         generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_detected, flags)
         
+        # If the device is clean and no malicious hardware identified, release from quarantine
+        if not malware_detected and base_risk < 5 and total_risk < 8:
+            print(Colors.GREEN + "[*] Device is CLEAN. Authorizing OS to mount drivers..." + Colors.END)
+            usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
+            if usb_port:
+                authorize_usb_device(usb_port)
+            else:
+                print(Colors.YELLOW + "[!] Could not determine sysfs port to authorize." + Colors.END)
+        else:
+            print(Colors.RED + "[!] Device is MALICIOUS. Keeping device frozen in sandbox." + Colors.END)
+
         print(Colors.GREEN + "[✓] Device analysis complete. Ready for next device..." + Colors.END)
     except Exception as e:
         print(Colors.RED + f"\n[!] Error handling USB device: {e}" + Colors.END)
@@ -733,6 +744,25 @@ def calculate_hid_risk(device_info, event_key):
 # ==========================================
 # SYSFS / UNBIND HELPERS
 # ==========================================
+def authorize_usb_device(usb_port):
+    """
+    Explicitly allow the OS to load drivers.
+    Requires the udev default-deny rule to be active.
+    """
+    if not usb_port: return False
+    try:
+        auth_path = f"/sys/bus/usb/devices/{usb_port}/authorized"
+        if os.path.exists(auth_path):
+            with open(auth_path, "w") as f:
+                f.write("1")
+            print(Colors.GREEN + f"  [✓] Authorized USB port {usb_port} for use." + Colors.END)
+            return True
+    except PermissionError:
+        print(Colors.RED + "  [!] Permission denied. Must run scanner as root/sudo to authorize USBs." + Colors.END)
+    except Exception as e:
+        print(Colors.YELLOW + f"  [!] Failed to authorize {usb_port}: {e}" + Colors.END)
+    return False
+
 def _sysfs_port_from_phys(phys):
     """Return the USB device port (e.g. '1-1.4') from a phys string."""
     if not phys:
