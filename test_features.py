@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Run automated checks for USB scanner features."""
+
+import os
+import sys
+import tempfile
+import shutil
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+os.chdir(ROOT)
+
+PASS = 0
+FAIL = 0
+SKIP = 0
+
+
+def ok(name, detail=""):
+    global PASS
+    PASS += 1
+    print(f"  PASS  {name}" + (f" — {detail}" if detail else ""))
+
+
+def bad(name, detail=""):
+    global FAIL
+    FAIL += 1
+    print(f"  FAIL  {name}" + (f" — {detail}" if detail else ""))
+
+
+def skip(name, detail=""):
+    global SKIP
+    SKIP += 1
+    print(f"  SKIP  {name}" + (f" — {detail}" if detail else ""))
+
+
+def section(title):
+    print(f"\n{'=' * 60}")
+    print(title)
+    print("=" * 60)
+
+
+def main():
+    section("1. Dependencies")
+    try:
+        import pyudev  # noqa: F401
+        ok("pyudev")
+    except ImportError:
+        bad("pyudev", "run: .venv/bin/pip install -r requirements.txt")
+
+    try:
+        from fpdf import FPDF  # noqa: F401
+        ok("fpdf2")
+    except ImportError:
+        bad("fpdf2", "PDF reports disabled until installed")
+
+    section("2. Malware database")
+    try:
+        from db_init import ensure_database, DB_NAME
+        ensure_database()
+        ok("database created", DB_NAME)
+
+        import sqlite3
+        conn = sqlite3.connect(DB_NAME)
+        count = conn.execute("SELECT COUNT(*) FROM malware_hashes").fetchone()[0]
+        conn.close()
+        if count >= 1:
+            ok("hash entries loaded", f"{count} signature(s)")
+        else:
+            bad("hash entries", "table is empty")
+    except Exception as e:
+        bad("database", str(e))
+
+    section("3. Hash detection (EICAR test file)")
+    try:
+        from changed import calculate_sha256, check_hash
+
+        eicar = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+        path = os.path.join(tempfile.gettempdir(), "eicar_test.com")
+        with open(path, "wb") as f:
+            f.write(eicar)
+
+        digest = calculate_sha256(path)
+        match = check_hash(digest)
+        if match and match.get("signature") == "EICAR-Test-File":
+            ok("EICAR hash match", match["signature"])
+        else:
+            bad("EICAR hash match", f"got {match}")
+    except Exception as e:
+        bad("hash detection", str(e))
+
+    section("4. Static analysis engine")
+    try:
+        from changed import static_analyze, calculate_risk
+
+        tmp = tempfile.mkdtemp()
+        try:
+            ps1 = os.path.join(tmp, "test.ps1")
+            with open(ps1, "w") as f:
+                f.write("powershell -w hidden -enc SGVsbG8=")
+            findings = static_analyze(ps1)
+            risk = calculate_risk(findings)
+            if findings and risk in ("HIGH", "MEDIUM", "LOW"):
+                ok("suspicious script detection", f"risk={risk}, {len(findings)} finding(s)")
+            else:
+                bad("suspicious script detection", f"findings={findings}")
+
+            clean = os.path.join(tmp, "notes.txt")
+            with open(clean, "w") as f:
+                f.write("hello")
+            if not static_analyze(clean):
+                ok("clean file ignored")
+            else:
+                bad("clean file", "unexpected findings")
+        finally:
+            shutil.rmtree(tmp)
+    except Exception as e:
+        bad("static analysis", str(e))
+
+    section("5. PDF report generation")
+    try:
+        from changed import generate_pdf_report, FPDF
+
+        if FPDF is None:
+            skip("PDF report", "fpdf2 not installed")
+        else:
+            reports_dir = os.path.join(ROOT, "reports")
+            os.makedirs(reports_dir, mode=0o755, exist_ok=True)
+            test_path = os.path.join(reports_dir, "_self_test.pdf")
+            if os.path.exists(test_path):
+                os.remove(test_path)
+
+            before = set(os.listdir(reports_dir))
+            generate_pdf_report(
+                {"vendor": "SelfTest", "model": "USB", "vid": "0000", "pid": "0000", "serial": "TEST"},
+                0, 0, 0, False, ["automated self-test"],
+            )
+            after = set(os.listdir(reports_dir))
+            new_pdfs = [f for f in after - before if f.endswith(".pdf")]
+            if new_pdfs:
+                ok("PDF report", new_pdfs[0])
+            else:
+                bad("PDF report", "no new file in reports/")
+    except Exception as e:
+        bad("PDF report", str(e))
+
+    section("6. HID device parser")
+    try:
+        from changed import _parse_proc_input, calculate_hid_risk, HID_WHITELIST
+
+        devices = _parse_proc_input()
+        ok("HID parser", f"{len(devices)} USB HID device(s) on this Pi")
+        for event, info in list(devices.items())[:3]:
+            vid_pid = info.get("device_id", "?")
+            risk, flags = calculate_hid_risk(info, event)
+            whitelisted = vid_pid in HID_WHITELIST
+            print(f"        {event} {vid_pid} risk={risk} whitelist={'yes' if whitelisted else 'no'}")
+    except Exception as e:
+        bad("HID parser", str(e))
+
+    section("7. USB event monitor (pyudev)")
+    try:
+        import pyudev
+
+        context = pyudev.Context()
+        monitor = pyudev.Monitor.from_netlink(context)
+        monitor.filter_by(subsystem="usb")
+        monitor.start()
+        ok("USB udev monitor", "can subscribe to kernel events")
+    except Exception as e:
+        bad("USB udev monitor", str(e))
+
+    section("8. Mount helper (udisks)")
+    if shutil.which("udisksctl"):
+        ok("udisksctl found", "will try to mount USB if desktop does not")
+    else:
+        skip("udisksctl", "install udisks2 for auto-mount fallback")
+
+    section("9. Root privileges (HID blocking only)")
+    if os.geteuid() == 0:
+        ok("running as root", "HID blocking should work")
+    else:
+        skip("root check", "HID blocking needs: sudo ./run.sh")
+
+    section("SUMMARY")
+    total = PASS + FAIL + SKIP
+    print(f"  Passed : {PASS}/{total}")
+    print(f"  Failed : {FAIL}/{total}")
+    print(f"  Skipped: {SKIP}/{total} (manual or optional)")
+
+    if FAIL == 0:
+        print("\n  Automated checks OK. Do the manual USB/HID tests below.")
+    else:
+        print("\n  Fix failed checks before testing with real USB devices.")
+
+    print("""
+MANUAL TESTS (do these yourself)
+--------------------------------
+
+A) USB STORAGE SCAN
+   1. Run:  ./run.sh
+   2. Plug in a USB flash drive (FAT32/exFAT is easiest)
+   3. Expect:
+        [ EVENT ] USB Device Detected - Analyzing...
+        [+] Mounted at /media/...
+        [ SCANNING ] High-Speed Threaded FS Analysis...
+        COMPLETE USB DEVICE SECURITY REPORT
+        [+] PDF Report Generated: reports/scan_report_....pdf
+   4. Optional: put the EICAR test file on the stick — should flag as EICAR-Test-File
+
+B) HID WHITELIST (your keyboard should NOT be blocked)
+   1. Run:  ./run.sh
+   2. Unplug and replug your keyboard (or plug a known keyboard)
+   3. Expect: device listed as WHITELISTED, no blocking message
+
+C) HID BLOCKING (needs root + unknown device)
+   1. Run:  sudo ./run.sh
+   2. Plug in an unknown USB keyboard (not in HID_WHITELIST)
+   3. Expect: UNKNOWN KEYBOARD INTERFACE — BLOCKING NOW
+
+D) SCAN LOG
+   After a USB scan, check:  cat scan_log.json
+   (one JSON line per suspicious file)
+
+Press Ctrl+C to stop the scanner when done.
+""")
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

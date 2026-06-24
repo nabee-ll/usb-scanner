@@ -15,8 +15,16 @@ import json
 import base64
 import binascii
 import concurrent.futures
+import warnings
 from datetime import datetime
-from fpdf import FPDF
+import subprocess
+
+try:
+    from fpdf import FPDF
+except ImportError:
+    FPDF = None
+
+from db_init import DB_NAME, ensure_database
 
 # ==========================================
 # TERMINAL COLORS
@@ -43,6 +51,15 @@ HID_WHITELIST = {
     "093a:2510": "PixArt Optical USB Mouse",
     "1c4f:0034": "SIGMACHIP USB Mouse",            # now whitelisted
 }
+
+
+def format_vid_pid(vid, pid):
+    """Normalize vendor/product IDs to the whitelist key format."""
+    return f"{str(vid).lower()}:{str(pid).lower()}"
+
+
+def is_whitelisted_hid(vid, pid):
+    return format_vid_pid(vid, pid) in HID_WHITELIST
 
 # Bus type 0003 = USB HID.
 # 001e = platform/HDMI, 0011 = i8042/PS2, 0019 = GPIO.
@@ -203,8 +220,6 @@ def static_analyze(file_path: str) -> list:
 # ==========================================
 # DATABASE CONFIG
 # ==========================================
-DB_NAME = os.path.join(os.path.dirname(__file__), "test_malware.db")
-
 def check_hash(sha256_hash):
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -244,12 +259,35 @@ def find_mount_point(device_node):
         pass
     return None
 
+def try_mount_with_udisks(device_node):
+    """Ask udisks to mount the partition when desktop auto-mount is slow or missing."""
+    try:
+        result = subprocess.run(
+            ["udisksctl", "mount", "-b", device_node, "--no-user-interaction"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines():
+            if " at " in line:
+                return line.split(" at ", 1)[1].strip().rstrip(".")
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
 def wait_for_mount(device_node, timeout=15):
-    for _ in range(timeout):
-        time.sleep(1)
+    for attempt in range(timeout):
         mount = find_mount_point(device_node)
         if mount and os.path.exists(mount):
             return mount
+        if attempt == 4:
+            mount = try_mount_with_udisks(device_node)
+            if mount and os.path.exists(mount):
+                return mount
+        time.sleep(1)
     return None
 
 def scan_file_task(path):
@@ -376,11 +414,40 @@ def structural_rules(descriptor):
         flags.append("Missing serial number")
     return risk, flags
 
+
+def usb_device_has_storage(device):
+    """True if this USB device exposes a storage partition."""
+    context = pyudev.Context()
+    for block_device in context.list_devices(subsystem="block"):
+        if block_device.device_type == "partition":
+            parent = block_device.find_parent("usb", "usb_device")
+            if parent and parent.device_path == device.device_path:
+                return True
+    return False
+
+
+def print_whitelisted_hid_report(usb_info, vid_pid):
+    print("\n" + "━" * 60)
+    print(Colors.BOLD + Colors.GREEN + "        WHITELISTED HID DEVICE — TRUSTED        " + Colors.END)
+    print("━" * 60)
+    print(f" Time           : {datetime.now()}")
+    print(f" Device         : {HID_WHITELIST[vid_pid]}")
+    print(f" VID:PID        : {vid_pid}")
+    print(f" Vendor         : {usb_info['vendor']}")
+    print(f" Model          : {usb_info['model']}")
+    print(f"\n✓ Device is WHITELISTED — no storage to scan, will not be blocked")
+    print("━" * 60 + "\n")
+    print(Colors.GREEN + "[✓] Device analysis complete. Ready for next device..." + Colors.END)
+
 def generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_detected, flags):
+    if FPDF is None:
+        print(Colors.YELLOW +
+              "[!] PDF skipped — install dependencies: .venv/bin/pip install -r requirements.txt" +
+              Colors.END)
+        return
     try:
         pdf_dir = os.path.join(os.path.dirname(__file__), "reports")
-        if not os.path.exists(pdf_dir):
-            os.makedirs(pdf_dir)
+        os.makedirs(pdf_dir, mode=0o755, exist_ok=True)
             
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"scan_report_{usb_info['vid']}_{usb_info['pid']}_{timestamp_str}.pdf"
@@ -388,64 +455,57 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_d
         
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        
-        # Header
-        pdf.cell(190, 10, "Intelligent USB Security Engine - Scan Report", 0, 1, 'C')
-        pdf.ln(10)
-        
-        # Device details
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(190, 10, "Device Information", 0, 1, 'L')
-        pdf.set_font("Arial", '', 11)
-        pdf.cell(50, 8, f"Time: ", 0, 0)
-        pdf.cell(140, 8, f"{datetime.now()}", 0, 1)
-        pdf.cell(50, 8, f"Vendor/Model: ", 0, 0)
-        pdf.cell(140, 8, f"{usb_info['vendor']} / {usb_info['model']}", 0, 1)
-        pdf.cell(50, 8, f"VID:PID: ", 0, 0)
-        pdf.cell(140, 8, f"{usb_info['vid']}:{usb_info['pid']}", 0, 1)
-        pdf.cell(50, 8, f"Serial: ", 0, 0)
-        pdf.cell(140, 8, f"{usb_info['serial']}", 0, 1)
-        pdf.ln(10)
-        
-        # Risk scores
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(190, 10, "Security Analysis Results", 0, 1, 'L')
-        pdf.set_font("Arial", '', 11)
-        pdf.cell(50, 8, "Hardware Risk:", 0, 0)
-        pdf.cell(140, 8, str(base_risk), 0, 1)
-        pdf.cell(50, 8, "Storage Risk:", 0, 0)
-        pdf.cell(140, 8, str(storage_risk), 0, 1)
-        pdf.cell(50, 8, "Total Risk Score:", 0, 0)
-        pdf.cell(140, 8, str(total_risk), 0, 1)
-        
-        level_str = "CLEAN"
-        if total_risk >= 15: level_str = "HIGH"
-        elif total_risk >= 8: level_str = "MEDIUM"
-        elif total_risk > 0: level_str = "LOW"
-        
-        pdf.cell(50, 8, "Threat Level:", 0, 0)
-        pdf.cell(140, 8, level_str, 0, 1)
-        pdf.ln(10)
-        
-        if malware_detected:
-            pdf.set_font("Arial", 'B', 14)
-            pdf.set_text_color(255, 0, 0)
-            pdf.cell(190, 10, "WARNING: MALWARE DETECTED ON DEVICE", 0, 1, 'L')
-            pdf.set_text_color(0, 0, 0)
-            pdf.ln(5)
-            
-        if flags:
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(190, 10, "Hardware Anomalies / Flags:", 0, 1, 'L')
-            pdf.set_font("Arial", '', 11)
-            for f in flags:
-                pdf.cell(190, 8, f" - {f}", 0, 1, 'L')
-                
-        # Footer
-        pdf.ln(10)
-        pdf.set_font("Arial", 'I', 9)
-        pdf.cell(190, 10, "End of report.", 0, 1, 'C')
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            pdf.set_font("Helvetica", 'B', 16)
+            pdf.cell(190, 10, "Intelligent USB Security Engine - Scan Report", 0, 1, 'C')
+            pdf.ln(10)
+            pdf.set_font("Helvetica", 'B', 12)
+            pdf.cell(190, 10, "Device Information", 0, 1, 'L')
+            pdf.set_font("Helvetica", '', 11)
+            pdf.cell(50, 8, f"Time: ", 0, 0)
+            pdf.cell(140, 8, f"{datetime.now()}", 0, 1)
+            pdf.cell(50, 8, f"Vendor/Model: ", 0, 0)
+            pdf.cell(140, 8, f"{usb_info['vendor']} / {usb_info['model']}", 0, 1)
+            pdf.cell(50, 8, f"VID:PID: ", 0, 0)
+            pdf.cell(140, 8, f"{usb_info['vid']}:{usb_info['pid']}", 0, 1)
+            pdf.cell(50, 8, f"Serial: ", 0, 0)
+            pdf.cell(140, 8, f"{usb_info['serial']}", 0, 1)
+            pdf.ln(10)
+            pdf.set_font("Helvetica", 'B', 12)
+            pdf.cell(190, 10, "Security Analysis Results", 0, 1, 'L')
+            pdf.set_font("Helvetica", '', 11)
+            pdf.cell(50, 8, "Hardware Risk:", 0, 0)
+            pdf.cell(140, 8, str(base_risk), 0, 1)
+            pdf.cell(50, 8, "Storage Risk:", 0, 0)
+            pdf.cell(140, 8, str(storage_risk), 0, 1)
+            pdf.cell(50, 8, "Total Risk Score:", 0, 0)
+            pdf.cell(140, 8, str(total_risk), 0, 1)
+            level_str = "CLEAN"
+            if total_risk >= 15:
+                level_str = "HIGH"
+            elif total_risk >= 8:
+                level_str = "MEDIUM"
+            elif total_risk > 0:
+                level_str = "LOW"
+            pdf.cell(50, 8, "Threat Level:", 0, 0)
+            pdf.cell(140, 8, level_str, 0, 1)
+            pdf.ln(10)
+            if malware_detected:
+                pdf.set_font("Helvetica", 'B', 14)
+                pdf.set_text_color(255, 0, 0)
+                pdf.cell(190, 10, "WARNING: MALWARE DETECTED ON DEVICE", 0, 1, 'L')
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(5)
+            if flags:
+                pdf.set_font("Helvetica", 'B', 12)
+                pdf.cell(190, 10, "Hardware Anomalies / Flags:", 0, 1, 'L')
+                pdf.set_font("Helvetica", '', 11)
+                for f in flags:
+                    pdf.cell(190, 8, f" - {f}", 0, 1, 'L')
+            pdf.ln(10)
+            pdf.set_font("Helvetica", 'I', 9)
+            pdf.cell(190, 10, "End of report.", 0, 1, 'C')
         
         pdf.output(filepath)
         print(Colors.GREEN + f"[+] PDF Report Generated: {filepath}" + Colors.END)
@@ -454,18 +514,28 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_d
 
 def handle_usb_device(device):
     try:
+        usb_info = analyze_descriptors(device)
+        vid_pid = format_vid_pid(usb_info["vid"], usb_info["pid"])
+
+        # Whitelisted keyboard/mouse — skip full report (check before 3s wait)
+        if vid_pid in HID_WHITELIST and not usb_device_has_storage(device):
+            print(Colors.CYAN + f"\n[ EVENT ] Whitelisted device connected: {HID_WHITELIST[vid_pid]}" + Colors.END)
+            print_whitelisted_hid_report(usb_info, vid_pid)
+            return
+
         print(Colors.CYAN + "\n[ EVENT ] USB Device Detected - Analyzing..." + Colors.END)
         time.sleep(3)
 
-        usb_info = analyze_descriptors(device)
         base_risk, flags = structural_rules(usb_info)
         storage_risk, malware_detected = 0, False
+        has_storage = False
 
         context = pyudev.Context()
         for block_device in context.list_devices(subsystem="block"):
             if block_device.device_type == "partition":
                 parent = block_device.find_parent("usb", "usb_device")
                 if parent and parent.device_path == device.device_path:
+                    has_storage = True
                     print(Colors.CYAN + f"[*] Found partition: {block_device.device_node}" + Colors.END)
                     mount = wait_for_mount(block_device.device_node)
                     if mount:
@@ -484,7 +554,7 @@ def handle_usb_device(device):
         print(f" Time           : {datetime.now()}")
         print(f" Vendor         : {usb_info['vendor']}")
         print(f" Model          : {usb_info['model']}")
-        print(f" VID:PID        : {usb_info['vid']}:{usb_info['pid']}")
+        print(f" VID:PID        : {vid_pid}")
         print(f" Serial         : {usb_info['serial']}")
         print(f" USB Class      : {usb_info['usb_class']}")
         print(f" USB Driver     : {usb_info['usb_driver']}")
@@ -493,6 +563,8 @@ def handle_usb_device(device):
         print(f" Storage Risk   : {storage_risk}")
         print(f" Total Risk     : {total_risk}")
         print(f" Threat Level   : {threat_level(total_risk)}")
+        if vid_pid in HID_WHITELIST:
+            print(f"\n✓ HID Whitelist  : {HID_WHITELIST[vid_pid]}")
         if malware_detected:
             print("\n" + Colors.RED + Colors.BOLD + "⚠️  MALWARE DETECTED ON DEVICE ⚠️" + Colors.END)
         if flags:
@@ -898,14 +970,12 @@ def _process_hid_event(event_name, seen_events):
 
     connection_time = time.time()
 
-    # Give kernel 50ms to finish writing /proc/bus/input/devices
-    time.sleep(0.05)
-
-    device_info = _parse_proc_input(filter_event=event_name)
-    if device_info is None:
-        # Retry once — very fast devices may not be listed yet
-        time.sleep(0.1)
+    device_info = None
+    for delay in (0.05, 0.15, 0.3, 0.5, 1.0):
+        time.sleep(delay)
         device_info = _parse_proc_input(filter_event=event_name)
+        if device_info is not None:
+            break
     if device_info is None:
         print(Colors.YELLOW +
               f"[!] {event_name}: not found in /proc/bus/input/devices "
@@ -914,6 +984,10 @@ def _process_hid_event(event_name, seen_events):
         return
 
     vid_pid = device_info.get("device_id", event_name)
+    if vid_pid in HID_WHITELIST:
+        print(Colors.GREEN + f"\n[ HID ] WHITELISTED device connected: {HID_WHITELIST[vid_pid]} ({vid_pid})" + Colors.END)
+        return
+
     risk_score, flags = calculate_hid_risk(device_info, event_name)
 
     print(Colors.CYAN + "\n[ HID DEVICE DETECTED ]\n" + Colors.END)
@@ -1034,6 +1108,14 @@ def hid_monitor():
 # MAIN ENTRY POINT
 # ==========================================
 if __name__ == "__main__":
+    db_path = ensure_database()
+    print(Colors.GREEN + f"[*] Malware database: {db_path}" + Colors.END)
+    print(Colors.GREEN + f"[*] HID whitelist: {len(HID_WHITELIST)} trusted device(s)" + Colors.END)
+    if FPDF is None:
+        print(Colors.YELLOW +
+              "[!] fpdf2 not installed — PDF reports disabled. "
+              "Run: .venv/bin/pip install -r requirements.txt" +
+              Colors.END)
     hid_thread = threading.Thread(target=hid_monitor, daemon=True)
     hid_thread.start()
     monitor_usb()
