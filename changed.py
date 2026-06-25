@@ -16,6 +16,7 @@ import base64
 import binascii
 import concurrent.futures
 import warnings
+import shutil
 from datetime import datetime
 import subprocess
 
@@ -245,6 +246,45 @@ def calculate_sha256(file_path):
     except Exception:
         return None
 
+
+def _clamav_command():
+    """Prefer clamdscan when available, otherwise fall back to clamscan."""
+    clamdscan = shutil.which("clamdscan")
+    if clamdscan:
+        return [clamdscan, "--no-summary"]
+    clamscan = shutil.which("clamscan")
+    if clamscan:
+        return [clamscan, "--no-summary"]
+    return None
+
+
+def clamav_scan_file(file_path):
+    """Return ClamAV findings for a single file, or an empty list when clean/unavailable."""
+    command = _clamav_command()
+    if not command:
+        return []
+    try:
+        result = subprocess.run(
+            command + [file_path],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
+        return [{"issue": f"ClamAV scan skipped: {e}", "risk": 0}]
+
+    output = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+    if result.returncode == 1:
+        signature = "infected file"
+        for line in output.splitlines():
+            if " FOUND" in line:
+                signature = line.rsplit(":", 1)[-1].replace("FOUND", "").strip()
+                break
+        return [{"issue": f"ClamAV MALWARE DETECTED: {signature}", "risk": 15}]
+    if result.returncode > 1:
+        return [{"issue": f"ClamAV scan error: {output[:160]}", "risk": 0}]
+    return []
+
 # ==========================================
 # STORAGE MONITOR
 # ==========================================
@@ -290,6 +330,136 @@ def wait_for_mount(device_node, timeout=15):
         time.sleep(1)
     return None
 
+
+# ==========================================
+# MTP / PHONE STORAGE SUPPORT
+# ==========================================
+def is_mtp_or_ptp_device(device):
+    """Best-effort udev detection for phones that expose files through MTP/PTP."""
+    checks = [
+        device.get("ID_MTP_DEVICE"),
+        device.get("ID_MEDIA_PLAYER"),
+        device.get("ID_PTP_DEVICE"),
+        device.get("MTP_NO_PROBE"),
+    ]
+    if any(str(value).lower() in {"1", "true", "yes"} for value in checks if value):
+        return True
+
+    searchable = " ".join(
+        str(value).lower()
+        for value in [
+            device.get("ID_USB_CLASS_FROM_DATABASE"),
+            device.get("ID_USB_INTERFACES"),
+            device.get("ID_MODEL"),
+            device.get("ID_VENDOR"),
+            device.get("ID_USB_DRIVER"),
+        ]
+        if value
+    )
+    return any(token in searchable for token in ("mtp", "ptp", "still imaging", "media player"))
+
+
+def _gvfs_mtp_roots():
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    candidates = []
+    if uid is not None:
+        candidates.append(f"/run/user/{uid}/gvfs")
+    xdg_runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg_runtime:
+        candidates.append(os.path.join(xdg_runtime, "gvfs"))
+    return [path for path in candidates if os.path.isdir(path)]
+
+
+def find_existing_mtp_mounts():
+    mounts = []
+    for gvfs_root in _gvfs_mtp_roots():
+        try:
+            for name in os.listdir(gvfs_root):
+                path = os.path.join(gvfs_root, name)
+                if name.startswith(("mtp:", "gphoto2:")) and os.path.isdir(path):
+                    mounts.append(path)
+        except OSError:
+            continue
+    return mounts
+
+
+def try_mount_with_gio(device):
+    """Ask GVFS/GIO to mount the MTP/PTP device if the desktop stack is available."""
+    if not shutil.which("gio"):
+        return []
+
+    before = set(find_existing_mtp_mounts())
+    device_file = device.device_node or device.get("DEVNAME")
+    mount_targets = []
+    if device_file:
+        mount_targets.append(device_file)
+
+    # Some desktops need a generic MTP volume activation instead of a dev node.
+    mount_targets.extend(["mtp://", "gphoto2://"])
+
+    for target in mount_targets:
+        try:
+            subprocess.run(
+                ["gio", "mount", target],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+
+        after = set(find_existing_mtp_mounts())
+        new_mounts = list(after - before)
+        if new_mounts:
+            return new_mounts
+    return list(set(find_existing_mtp_mounts()) - before)
+
+
+def try_mount_with_fuse_mtp(device):
+    """Mount the first available MTP device with simple-mtpfs or jmtpfs when installed."""
+    helper = shutil.which("simple-mtpfs") or shutil.which("jmtpfs")
+    if not helper:
+        return None
+
+    vid = str(device.get("ID_VENDOR_ID", "unknown")).lower()
+    pid = str(device.get("ID_MODEL_ID", "unknown")).lower()
+    mount_root = os.path.join("/tmp", "usb_scanner_mtp")
+    mount_path = os.path.join(mount_root, f"{vid}_{pid}")
+    try:
+        os.makedirs(mount_path, mode=0o700, exist_ok=True)
+        result = subprocess.run(
+            [helper, mount_path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and os.path.isdir(mount_path):
+            return mount_path
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def wait_for_mtp_mount(device, timeout=20):
+    """Return accessible MTP/PTP mount paths for a connected phone."""
+    for attempt in range(timeout):
+        mounts = find_existing_mtp_mounts()
+        if mounts:
+            return mounts
+
+        if attempt == 3:
+            mounts = try_mount_with_gio(device)
+            if mounts:
+                return mounts
+
+        if attempt == 7:
+            mount = try_mount_with_fuse_mtp(device)
+            if mount:
+                return [mount]
+
+        time.sleep(1)
+    return []
+
 def scan_file_task(path):
     findings = []
     
@@ -298,6 +468,8 @@ def scan_file_task(path):
         result = check_hash(sha)
         if result:
             findings.append({"issue": f"DB MALWARE DETECTED: {result['signature']}", "risk": 15})
+
+    findings.extend(clamav_scan_file(path))
             
     try:
         sa_findings = static_analyze(path)
@@ -529,6 +701,7 @@ def handle_usb_device(device):
         base_risk, flags = structural_rules(usb_info)
         storage_risk, malware_detected = 0, False
         has_storage = False
+        scanned_paths = []
 
         context = pyudev.Context()
         for block_device in context.list_devices(subsystem="block"):
@@ -540,12 +713,36 @@ def handle_usb_device(device):
                     mount = wait_for_mount(block_device.device_node)
                     if mount:
                         print(f"[+] Mounted at {mount}")
-                        pr, pm = scan_storage(mount)
+                        scanned_paths.append(mount)
+                        pr, pm = scan_storage(mount, usb_info)
                         storage_risk += pr
                         if pm:
                             malware_detected = True
                     else:
                         print(Colors.YELLOW + f"[!] Mount not found for {block_device.device_node}" + Colors.END)
+
+        if not has_storage and is_mtp_or_ptp_device(device):
+            has_storage = True
+            flags.append("Mobile phone detected through MTP/PTP")
+            print(Colors.CYAN + "[*] Mobile phone storage mode detected (MTP/PTP)" + Colors.END)
+            print(Colors.CYAN + "[*] Waiting for phone file-transfer mount..." + Colors.END)
+            mtp_mounts = wait_for_mtp_mount(device)
+            if mtp_mounts:
+                for mount in mtp_mounts:
+                    print(f"[+] Phone storage accessible at {mount}")
+                    scanned_paths.append(mount)
+                    pr, pm = scan_storage(mount, usb_info)
+                    storage_risk += pr
+                    if pm:
+                        malware_detected = True
+            else:
+                flags.append("MTP/PTP phone detected but no accessible file-transfer mount found")
+                print(Colors.YELLOW +
+                      "[!] Phone detected, but files are not accessible. Unlock the phone and select File Transfer/MTP." +
+                      Colors.END)
+
+        if not has_storage:
+            flags.append("No block storage or MTP/PTP file-transfer interface found")
 
         total_risk = base_risk + storage_risk
         print("\n" + "━" * 60)
@@ -563,6 +760,10 @@ def handle_usb_device(device):
         print(f" Storage Risk   : {storage_risk}")
         print(f" Total Risk     : {total_risk}")
         print(f" Threat Level   : {threat_level(total_risk)}")
+        if scanned_paths:
+            print("\n Scanned Paths:")
+            for path in scanned_paths:
+                print(f"  - {path}")
         if vid_pid in HID_WHITELIST:
             print(f"\n✓ HID Whitelist  : {HID_WHITELIST[vid_pid]}")
         if malware_detected:

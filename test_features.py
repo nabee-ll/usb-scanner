@@ -52,6 +52,13 @@ def main():
     except ImportError:
         bad("fpdf2", "PDF reports disabled until installed")
 
+    if shutil.which("clamdscan"):
+        ok("ClamAV", "clamdscan available")
+    elif shutil.which("clamscan"):
+        ok("ClamAV", "clamscan available")
+    else:
+        skip("ClamAV", "install clamav for antivirus engine scanning")
+
     section("2. Malware database")
     try:
         from db_init import ensure_database, DB_NAME
@@ -174,8 +181,20 @@ def main():
     else:
         skip("udisksctl", "install udisks2 for auto-mount fallback")
 
-    section("9. Root privileges (HID blocking only)")
-    if os.geteuid() == 0:
+    section("9. Phone/MTP mount helpers")
+    helpers = []
+    for helper in ("gio", "simple-mtpfs", "jmtpfs"):
+        if shutil.which(helper):
+            helpers.append(helper)
+    if helpers:
+        ok("MTP helper found", ", ".join(helpers))
+    else:
+        skip("MTP helper", "install gio/gvfs or simple-mtpfs to scan Android phone storage")
+
+    section("10. Root privileges (HID blocking only)")
+    if not hasattr(os, "geteuid"):
+        skip("root check", "not available on this OS; HID blocking is Linux-only")
+    elif os.geteuid() == 0:
         ok("running as root", "HID blocking should work")
     else:
         skip("root check", "HID blocking needs: sudo ./run.sh")
@@ -219,6 +238,16 @@ C) HID BLOCKING (needs root + unknown device)
 D) SCAN LOG
    After a USB scan, check:  cat scan_log.json
    (one JSON line per suspicious file)
+
+E) ANDROID PHONE / MTP SCAN
+   1. Install one MTP helper: gio/gvfs or simple-mtpfs
+   2. Run:  ./run.sh
+   3. Unlock the phone and select File Transfer / MTP, not Charging Only
+   4. Expect:
+        [*] Mobile phone storage mode detected (MTP/PTP)
+        [+] Phone storage accessible at /run/user/.../gvfs/mtp:...
+        [ SCANNING ] High-Speed Threaded FS Analysis...
+        COMPLETE USB DEVICE SECURITY REPORT
 
 Press Ctrl+C to stop the scanner when done.
 """)
