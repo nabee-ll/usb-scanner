@@ -871,35 +871,42 @@ def handle_usb_device(device):
         all_malicious_files = []
         antivirus_available = _clamav_command() is not None
 
-        context = pyudev.Context()
-        for block_device in context.list_devices(subsystem="block"):
-            if block_device.device_type == "partition":
-                parent = block_device.find_parent("usb", "usb_device")
-                if parent and parent.device_path == device.device_path:
-                    has_storage = True
-                    if not antivirus_available:
-                        storage_risk += 5
-                        flags.append("ClamAV unavailable; storage cannot be accepted as safe")
-                    print(Colors.CYAN + f"[*] Found partition: {block_device.device_node}" + Colors.END)
-                    mount, quarantine_mount = mount_for_quarantine_scan(block_device.device_node)
-                    if mount:
-                        print(f"[+] Scanning from {mount}")
-                        scanned_paths.append(mount)
-                        scanned_storage.append({
-                            "device_node": block_device.device_node,
-                            "mount_path": mount,
-                            "quarantine_mount": quarantine_mount,
-                            "safe": False,
-                        })
-                        pr, pm, pbad = scan_storage(mount, usb_info)
-                        storage_risk += pr
-                        if pm:
-                            malware_detected = True
-                            all_malicious_files.extend(pbad)
-                    else:
-                        storage_risk += 15
-                        flags.append(f"Could not mount {block_device.device_node} for safety scan (blocked by default)")
-                        print(Colors.RED + f"[!] Could not mount {block_device.device_node} for safety scan" + Colors.END)
+        # Retry partition detection — kernel may need extra time to register block devices
+        for attempt in range(5):
+            context = pyudev.Context()
+            for block_device in context.list_devices(subsystem="block"):
+                if block_device.device_type == "partition":
+                    parent = block_device.find_parent("usb", "usb_device")
+                    if parent and parent.device_path == device.device_path:
+                        has_storage = True
+                        if not antivirus_available:
+                            storage_risk += 5
+                            flags.append("ClamAV unavailable; storage cannot be accepted as safe")
+                        print(Colors.CYAN + f"[*] Found partition: {block_device.device_node}" + Colors.END)
+                        mount, quarantine_mount = mount_for_quarantine_scan(block_device.device_node)
+                        if mount:
+                            print(f"[+] Scanning from {mount}")
+                            scanned_paths.append(mount)
+                            scanned_storage.append({
+                                "device_node": block_device.device_node,
+                                "mount_path": mount,
+                                "quarantine_mount": quarantine_mount,
+                                "safe": False,
+                            })
+                            pr, pm, pbad = scan_storage(mount, usb_info)
+                            storage_risk += pr
+                            if pm:
+                                malware_detected = True
+                                all_malicious_files.extend(pbad)
+                        else:
+                            storage_risk += 15
+                            flags.append(f"Could not mount {block_device.device_node} for safety scan (blocked by default)")
+                            print(Colors.RED + f"[!] Could not mount {block_device.device_node} for safety scan" + Colors.END)
+            if has_storage:
+                break
+            if attempt < 4:
+                print(Colors.YELLOW + f"[*] Waiting for partitions to appear... (attempt {attempt + 2}/5)" + Colors.END)
+                time.sleep(2)
 
         if not has_storage and is_mtp_or_ptp_device(device):
             has_storage = True
@@ -994,7 +1001,8 @@ def handle_usb_device(device):
         
         # Storage access is decided by the file scan. Minor descriptor warnings
         # such as a missing serial are reported, but do not reject clean storage.
-        safe_to_use = bool(scanned_paths) and not malware_detected and storage_risk == 0
+        # A sanitized device (user deleted malware) is also safe to use.
+        safe_to_use = sanitized or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
         if safe_to_use:
             print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
             if base_risk > 0:
