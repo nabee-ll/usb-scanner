@@ -191,13 +191,13 @@ def main():
     else:
         skip("MTP helper", "install gio/gvfs or simple-mtpfs to scan Android phone storage")
 
-    section("10. Root privileges (HID blocking only)")
+    section("10. Root privileges (storage gate + HID blocking)")
     if not hasattr(os, "geteuid"):
-        skip("root check", "not available on this OS; HID blocking is Linux-only")
+        skip("root check", "not available on this OS; enforcement is Linux-only")
     elif os.geteuid() == 0:
-        ok("running as root", "HID blocking should work")
+        ok("running as root", "storage accept/block and HID blocking should work")
     else:
-        skip("root check", "HID blocking needs: sudo ./run.sh")
+        skip("root check", "enforcement needs: sudo ./run.sh")
 
     section("SUMMARY")
     total = PASS + FAIL + SKIP
@@ -230,10 +230,11 @@ B) HID WHITELIST (your keyboard should NOT be blocked)
    2. Unplug and replug your keyboard (or plug a known keyboard)
    3. Expect: device listed as WHITELISTED, no blocking message
 
-C) HID BLOCKING (needs root + unknown device)
+C) HID BLOCKING / STORAGE BLOCKING (needs root)
    1. Run:  sudo ./run.sh
-   2. Plug in an unknown USB keyboard (not in HID_WHITELIST)
-   3. Expect: UNKNOWN KEYBOARD INTERFACE — BLOCKING NOW
+   2. Plug in an unknown USB keyboard or unsafe USB storage
+   3. Expect unknown keyboards to be blocked
+   4. Expect unsafe storage to stay unmounted/rejected
 
 D) SCAN LOG
    After a USB scan, check:  cat scan_log.json

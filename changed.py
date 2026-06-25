@@ -331,6 +331,96 @@ def wait_for_mount(device_node, timeout=15):
     return None
 
 
+def is_root_user():
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def unmount_storage(device_node=None, mount_path=None):
+    """Best-effort unmount used to keep unsafe storage unavailable."""
+    success = False
+    commands = []
+    if device_node and shutil.which("udisksctl"):
+        commands.append(["udisksctl", "unmount", "-b", device_node, "--no-user-interaction"])
+    if mount_path:
+        commands.append(["umount", mount_path])
+
+    for command in commands:
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+            if result.returncode == 0:
+                success = True
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+    return success
+
+
+def quarantine_mount_path(device_node):
+    safe_name = os.path.basename(device_node).replace("/", "_")
+    return os.path.join("/tmp", "usb_scanner_quarantine", safe_name)
+
+
+def mount_for_quarantine_scan(device_node):
+    """
+    Mount a USB partition read-only with execution/device bits disabled for scanning.
+    Returns (mount_path, is_quarantine_mount).
+    """
+    existing_mount = find_mount_point(device_node)
+    if existing_mount:
+        print(Colors.YELLOW + f"[*] USB auto-mounted at {existing_mount}; unmounting before safety scan." + Colors.END)
+        unmount_storage(device_node, existing_mount)
+
+    if not is_root_user():
+        print(Colors.YELLOW +
+              "[!] Not running as root. Cannot enforce read-only quarantine mount; using existing OS mount if available." +
+              Colors.END)
+        mount = wait_for_mount(device_node)
+        return mount, False
+
+    mount_path = quarantine_mount_path(device_node)
+    try:
+        os.makedirs(mount_path, mode=0o700, exist_ok=True)
+        result = subprocess.run(
+            ["mount", "-o", "ro,nosuid,nodev,noexec", device_node, mount_path],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode == 0:
+            print(Colors.GREEN + f"[+] Quarantine-mounted read-only at {mount_path}" + Colors.END)
+            return mount_path, True
+        print(Colors.YELLOW + f"[!] Quarantine mount failed: {result.stderr.strip()}" + Colors.END)
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
+        print(Colors.YELLOW + f"[!] Quarantine mount error: {e}" + Colors.END)
+
+    mount = wait_for_mount(device_node)
+    return mount, False
+
+
+def release_storage_for_use(device_node, mount_path, is_quarantine_mount):
+    """Unmount scan mount and remount normally only after a clean verdict."""
+    if is_quarantine_mount:
+        unmount_storage(mount_path=mount_path)
+    if shutil.which("udisksctl"):
+        mount = try_mount_with_udisks(device_node)
+        if mount:
+            print(Colors.GREEN + f"[✓] Device accepted and mounted for user access at {mount}" + Colors.END)
+            return True
+    print(Colors.GREEN + "[✓] Device accepted. It is safe to mount/use normally." + Colors.END)
+    return True
+
+
+def keep_storage_blocked(device_node, mount_path, is_quarantine_mount):
+    """Remove unsafe storage from the filesystem view."""
+    if mount_path:
+        unmount_storage(device_node, mount_path)
+    if is_quarantine_mount:
+        try:
+            os.rmdir(mount_path)
+        except OSError:
+            pass
+    print(Colors.RED + f"[!] Device rejected. {device_node} is not mounted for user access." + Colors.END)
+
+
 # ==========================================
 # MTP / PHONE STORAGE SUPPORT
 # ==========================================
@@ -702,6 +792,8 @@ def handle_usb_device(device):
         storage_risk, malware_detected = 0, False
         has_storage = False
         scanned_paths = []
+        scanned_storage = []
+        antivirus_available = _clamav_command() is not None
 
         context = pyudev.Context()
         for block_device in context.list_devices(subsystem="block"):
@@ -709,21 +801,35 @@ def handle_usb_device(device):
                 parent = block_device.find_parent("usb", "usb_device")
                 if parent and parent.device_path == device.device_path:
                     has_storage = True
+                    if not antivirus_available:
+                        storage_risk += 5
+                        flags.append("ClamAV unavailable; storage cannot be accepted as safe")
                     print(Colors.CYAN + f"[*] Found partition: {block_device.device_node}" + Colors.END)
-                    mount = wait_for_mount(block_device.device_node)
+                    mount, quarantine_mount = mount_for_quarantine_scan(block_device.device_node)
                     if mount:
-                        print(f"[+] Mounted at {mount}")
+                        print(f"[+] Scanning from {mount}")
                         scanned_paths.append(mount)
+                        scanned_storage.append({
+                            "device_node": block_device.device_node,
+                            "mount_path": mount,
+                            "quarantine_mount": quarantine_mount,
+                            "safe": False,
+                        })
                         pr, pm = scan_storage(mount, usb_info)
                         storage_risk += pr
                         if pm:
                             malware_detected = True
                     else:
-                        print(Colors.YELLOW + f"[!] Mount not found for {block_device.device_node}" + Colors.END)
+                        malware_detected = True
+                        flags.append(f"Could not mount {block_device.device_node} for safety scan")
+                        print(Colors.RED + f"[!] Could not mount {block_device.device_node} for safety scan" + Colors.END)
 
         if not has_storage and is_mtp_or_ptp_device(device):
             has_storage = True
             flags.append("Mobile phone detected through MTP/PTP")
+            if not antivirus_available:
+                storage_risk += 5
+                flags.append("ClamAV unavailable; phone storage cannot be accepted as safe")
             print(Colors.CYAN + "[*] Mobile phone storage mode detected (MTP/PTP)" + Colors.END)
             print(Colors.CYAN + "[*] Waiting for phone file-transfer mount..." + Colors.END)
             mtp_mounts = wait_for_mtp_mount(device)
@@ -778,15 +884,31 @@ def handle_usb_device(device):
         generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_detected, flags)
         
         # If the device is clean and no malicious hardware identified, release from quarantine
-        if not malware_detected and base_risk < 5 and total_risk < 8:
-            print(Colors.GREEN + "[*] Device is CLEAN. Authorizing OS to mount drivers..." + Colors.END)
+        safe_to_use = bool(scanned_paths) and not malware_detected and base_risk == 0 and storage_risk == 0
+        if safe_to_use:
+            print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
+            for item in scanned_storage:
+                release_storage_for_use(
+                    item["device_node"],
+                    item["mount_path"],
+                    item["quarantine_mount"],
+                )
             usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
             if usb_port:
                 authorize_usb_device(usb_port)
             else:
                 print(Colors.YELLOW + "[!] Could not determine sysfs port to authorize." + Colors.END)
         else:
-            print(Colors.RED + "[!] Device is MALICIOUS. Keeping device frozen in sandbox." + Colors.END)
+            print(Colors.RED + "[!] Device is NOT SAFE. Keeping storage unavailable." + Colors.END)
+            for item in scanned_storage:
+                keep_storage_blocked(
+                    item["device_node"],
+                    item["mount_path"],
+                    item["quarantine_mount"],
+                )
+            usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
+            if usb_port:
+                deauthorize_usb_device(usb_port)
 
         print(Colors.GREEN + "[✓] Device analysis complete. Ready for next device..." + Colors.END)
     except Exception as e:
@@ -962,6 +1084,24 @@ def authorize_usb_device(usb_port):
         print(Colors.RED + "  [!] Permission denied. Must run scanner as root/sudo to authorize USBs." + Colors.END)
     except Exception as e:
         print(Colors.YELLOW + f"  [!] Failed to authorize {usb_port}: {e}" + Colors.END)
+    return False
+
+
+def deauthorize_usb_device(usb_port):
+    """Deny a USB device after an unsafe verdict, when sysfs authorization is available."""
+    if not usb_port:
+        return False
+    try:
+        auth_path = f"/sys/bus/usb/devices/{usb_port}/authorized"
+        if os.path.exists(auth_path):
+            with open(auth_path, "w") as f:
+                f.write("0")
+            print(Colors.RED + f"  [✓] Deauthorized USB port {usb_port}; device blocked." + Colors.END)
+            return True
+    except PermissionError:
+        print(Colors.RED + "  [!] Permission denied. Run with sudo to deauthorize unsafe USBs." + Colors.END)
+    except Exception as e:
+        print(Colors.YELLOW + f"  [!] Failed to deauthorize {usb_port}: {e}" + Colors.END)
     return False
 
 def _sysfs_port_from_phys(phys):
@@ -1342,9 +1482,13 @@ if __name__ == "__main__":
     db_path = ensure_database()
     print(Colors.GREEN + f"[*] Malware database: {db_path}" + Colors.END)
     print(Colors.GREEN + f"[*] HID whitelist: {len(HID_WHITELIST)} trusted device(s)" + Colors.END)
+    if not is_root_user():
+        print(Colors.YELLOW +
+              "[!] Not running as root. USB storage can be scanned, but accept/block enforcement requires: sudo ./run.sh" +
+              Colors.END)
     if FPDF is None:
         print(Colors.YELLOW +
-              "[!] fpdf2 not installed — PDF reports disabled. "
+              "[!] fpdf2 not installed — PDF reports disabled. " 
               "Run: .venv/bin/pip install -r requirements.txt" +
               Colors.END)
     hid_thread = threading.Thread(target=hid_monitor, daemon=True)
