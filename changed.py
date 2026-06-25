@@ -719,59 +719,121 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
         
         pdf = FPDF()
         pdf.add_page()
+        
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            pdf.set_font("Helvetica", 'B', 16)
-            pdf.cell(190, 10, "Intelligent USB Security Engine - Scan Report", 0, 1, 'C')
-            pdf.ln(10)
-            pdf.set_font("Helvetica", 'B', 12)
-            pdf.cell(190, 10, "Device Information", 0, 1, 'L')
-            pdf.set_font("Helvetica", '', 11)
-            pdf.cell(50, 8, f"Time: ", 0, 0)
-            pdf.cell(140, 8, f"{datetime.now()}", 0, 1)
-            pdf.cell(50, 8, f"Vendor/Model: ", 0, 0)
-            pdf.cell(140, 8, f"{usb_info['vendor']} / {usb_info['model']}", 0, 1)
-            pdf.cell(50, 8, f"VID:PID: ", 0, 0)
-            pdf.cell(140, 8, f"{usb_info['vid']}:{usb_info['pid']}", 0, 1)
-            pdf.cell(50, 8, f"Serial: ", 0, 0)
-            pdf.cell(140, 8, f"{usb_info['serial']}", 0, 1)
-            pdf.ln(10)
-            pdf.set_font("Helvetica", 'B', 12)
-            pdf.cell(190, 10, "Security Analysis Results", 0, 1, 'L')
-            pdf.set_font("Helvetica", '', 11)
-            pdf.cell(50, 8, "Hardware Risk:", 0, 0)
-            pdf.cell(140, 8, str(base_risk), 0, 1)
-            pdf.cell(50, 8, "Storage Risk:", 0, 0)
-            pdf.cell(140, 8, str(storage_risk), 0, 1)
-            pdf.cell(50, 8, "HID/Injection Risk:", 0, 0)
-            pdf.cell(140, 8, str(hid_risk), 0, 1)
-            pdf.cell(50, 8, "Total Risk Score:", 0, 0)
-            pdf.cell(140, 8, str(total_risk), 0, 1)
+            
+            # 1. Header Banner
+            pdf.set_fill_color(41, 128, 185) # Blue header
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", 'B', 18)
+            pdf.cell(0, 15, " USB Security Scan Report ", 0, 1, 'C', fill=True)
+            pdf.ln(5)
+            
+            # 2. Threat Level Banner
             level_str = "CLEAN"
+            fill_r, fill_g, fill_b = 39, 174, 96 # Green
             if total_risk >= 15:
-                level_str = "HIGH"
+                level_str = "HIGH RISK - DEVICE BLOCKED"
+                fill_r, fill_g, fill_b = 192, 57, 43 # Red
             elif total_risk >= 8:
-                level_str = "MEDIUM"
+                level_str = "MEDIUM RISK - DEVICE BLOCKED"
+                fill_r, fill_g, fill_b = 211, 84, 0 # Orange/Yellow
             elif total_risk > 0:
-                level_str = "LOW"
-            pdf.cell(50, 8, "Threat Level:", 0, 0)
-            pdf.cell(140, 8, level_str, 0, 1)
+                level_str = "LOW RISK"
+                fill_r, fill_g, fill_b = 243, 156, 18 # Yellow
+            
+            pdf.set_fill_color(fill_r, fill_g, fill_b)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", 'B', 14)
+            pdf.cell(0, 12, f" Overall Threat Level: {level_str} ", 0, 1, 'C', fill=True)
             pdf.ln(10)
+            
+            # Restore colors for text
+            pdf.set_text_color(0, 0, 0)
+            
+            # 3. Summary Paragraph
+            pdf.set_font("Helvetica", '', 11)
+            pdf.multi_cell(0, 6, f"This report was automatically generated on {datetime.now().strftime('%B %d, %Y at %H:%M:%S')}. "
+                                 "It summarizes the hardware, storage, and behavioral analysis of the connected USB device. "
+                                 f"The device achieved a total risk score of {total_risk}. Scores above 7 indicate malicious behavior that triggers automatic blocking.")
+            pdf.ln(8)
+            
+            # 4. Device Information Table
+            pdf.set_fill_color(236, 240, 241) # Light gray for headers
+            pdf.set_font("Helvetica", 'B', 12)
+            pdf.cell(0, 8, " Device Identity", border="B", ln=1)
+            pdf.ln(2)
+            
+            col1 = 50
+            col2 = 140
+            
+            info_rows = [
+                ("Vendor / Model", f"{usb_info['vendor']} / {usb_info['model']}"),
+                ("Hardware ID (VID:PID)", f"{usb_info['vid']}:{usb_info['pid']}"),
+                ("Serial Number", usb_info['serial']),
+                ("USB Class", usb_info['usb_class'])
+            ]
+            
+            for label, val in info_rows:
+                pdf.set_font("Helvetica", 'B', 10)
+                pdf.cell(col1, 8, label, border=0)
+                pdf.set_font("Helvetica", '', 10)
+                pdf.cell(col2, 8, val, border=0, ln=1)
+                
+            pdf.ln(6)
+            
+            # 5. Risk Breakdown
+            pdf.set_font("Helvetica", 'B', 12)
+            pdf.cell(0, 8, " Risk Score Breakdown", border="B", ln=1)
+            pdf.ln(2)
+            
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.cell(col1, 8, "Hardware Anomalies:")
+            pdf.set_font("Helvetica", '', 10)
+            pdf.cell(col2, 8, str(base_risk), ln=1)
+            
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.cell(col1, 8, "Storage / Filesystem:")
+            pdf.set_font("Helvetica", '', 10)
+            pdf.cell(col2, 8, str(storage_risk), ln=1)
+            
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.cell(col1, 8, "HID / Keystroke Injection:")
+            pdf.set_font("Helvetica", '', 10)
+            pdf.cell(col2, 8, str(hid_risk), ln=1)
+            
+            pdf.ln(6)
+            
+            # 6. Malware Warning if applicable
             if malware_detected:
-                pdf.set_font("Helvetica", 'B', 14)
-                pdf.set_text_color(255, 0, 0)
-                pdf.cell(190, 10, "WARNING: MALWARE DETECTED ON DEVICE", 0, 1, 'L')
-                pdf.set_text_color(0, 0, 0)
-                pdf.ln(5)
-            if flags:
+                pdf.set_fill_color(255, 235, 238) # Light red
+                pdf.set_text_color(192, 57, 43)
                 pdf.set_font("Helvetica", 'B', 12)
-                pdf.cell(190, 10, "Hardware Anomalies / Flags:", 0, 1, 'L')
-                pdf.set_font("Helvetica", '', 11)
+                pdf.multi_cell(0, 10, "⚠ MALWARE OR MALICIOUS SCRIPTS DETECTED ON DEVICE", border=1, align='C', fill=True)
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(6)
+            
+            # 7. Detailed Findings
+            pdf.set_font("Helvetica", 'B', 12)
+            pdf.cell(0, 8, " Detailed Findings & Flags", border="B", ln=1)
+            pdf.ln(4)
+            
+            pdf.set_font("Helvetica", '', 10)
+            if not flags and not malware_detected:
+                pdf.cell(0, 8, "No anomalies or malicious indicators were found on this device.", ln=1)
+            else:
                 for f in flags:
-                    pdf.cell(190, 8, f" - {f}", 0, 1, 'L')
-            pdf.ln(10)
+                    pdf.set_font("Helvetica", 'B', 10)
+                    pdf.cell(5, 6, "•")
+                    pdf.set_font("Helvetica", '', 10)
+                    pdf.multi_cell(0, 6, f)
+            
+            pdf.ln(15)
+            # Footer
+            pdf.set_text_color(127, 140, 141)
             pdf.set_font("Helvetica", 'I', 9)
-            pdf.cell(190, 10, "End of report.", 0, 1, 'C')
+            pdf.cell(0, 10, "End of automated security report.", 0, 1, 'C')
         
         pdf.output(filepath)
         print(Colors.GREEN + f"[+] PDF Report Generated: {filepath}" + Colors.END)
