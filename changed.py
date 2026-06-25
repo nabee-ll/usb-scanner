@@ -896,7 +896,10 @@ def handle_usb_device(device):
         for attempt in range(5):
             context = pyudev.Context()
             for block_device in context.list_devices(subsystem="block"):
-                if block_device.device_type == "partition":
+                # A block device is mountable if it has a filesystem. This catches both normal partitions
+                # (/dev/sda1) and superfloppy formatted drives that have the filesystem directly on the disk (/dev/sda).
+                is_mountable = block_device.get("ID_FS_USAGE") == "filesystem"
+                if is_mountable or block_device.device_type == "partition":
                     parent = block_device.find_parent("usb", "usb_device")
                     if parent and parent.device_path == device.device_path:
                         has_storage = True
