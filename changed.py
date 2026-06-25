@@ -810,7 +810,7 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
                 pdf.set_fill_color(255, 235, 238) # Light red
                 pdf.set_text_color(192, 57, 43)
                 pdf.set_font("Helvetica", 'B', 12)
-                pdf.multi_cell(0, 10, "⚠ MALWARE OR MALICIOUS SCRIPTS DETECTED ON DEVICE", border=1, align='C', fill=True)
+                pdf.multi_cell(0, 10, "[!] MALWARE OR MALICIOUS SCRIPTS DETECTED ON DEVICE", border=1, align='C', fill=True)
                 pdf.set_text_color(0, 0, 0)
                 pdf.ln(6)
             
@@ -825,7 +825,7 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
             else:
                 for f in flags:
                     pdf.set_font("Helvetica", 'B', 10)
-                    pdf.cell(5, 6, "•")
+                    pdf.cell(5, 6, "-")
                     pdf.set_font("Helvetica", '', 10)
                     pdf.multi_cell(0, 6, f)
             
