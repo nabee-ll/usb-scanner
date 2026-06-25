@@ -44,6 +44,8 @@ class Colors:
 # Add YOUR trusted devices here as "vid:pid": "Name"
 # Run `lsusb` to find your device IDs.
 # ==========================================
+HID_RISK_CACHE = {}
+
 HID_WHITELIST = {
     "413c:2113": "Dell KB216 Wired Keyboard",     # corrected PID
     "413c:3020": "Dell KB216 Wired Keyboard (alt)",
@@ -701,7 +703,7 @@ def print_whitelisted_hid_report(usb_info, vid_pid):
     print("━" * 60 + "\n")
     print(Colors.GREEN + "[✓] Device analysis complete. Ready for next device..." + Colors.END)
 
-def generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_detected, flags):
+def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags):
     if FPDF is None:
         print(Colors.YELLOW +
               "[!] PDF skipped — install dependencies: .venv/bin/pip install -r requirements.txt" +
@@ -741,6 +743,8 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_d
             pdf.cell(140, 8, str(base_risk), 0, 1)
             pdf.cell(50, 8, "Storage Risk:", 0, 0)
             pdf.cell(140, 8, str(storage_risk), 0, 1)
+            pdf.cell(50, 8, "HID/Injection Risk:", 0, 0)
+            pdf.cell(140, 8, str(hid_risk), 0, 1)
             pdf.cell(50, 8, "Total Risk Score:", 0, 0)
             pdf.cell(140, 8, str(total_risk), 0, 1)
             level_str = "CLEAN"
@@ -789,6 +793,10 @@ def handle_usb_device(device):
         time.sleep(3)
 
         base_risk, flags = structural_rules(usb_info)
+        hid_data = HID_RISK_CACHE.get(vid_pid, {"risk": 0, "flags": []})
+        hid_risk = hid_data["risk"]
+        flags.extend(hid_data["flags"])
+        
         storage_risk, malware_detected = 0, False
         has_storage = False
         scanned_paths = []
@@ -850,7 +858,7 @@ def handle_usb_device(device):
         if not has_storage:
             flags.append("No block storage or MTP/PTP file-transfer interface found")
 
-        total_risk = base_risk + storage_risk
+        total_risk = base_risk + storage_risk + hid_risk
         print("\n" + "━" * 60)
         print(Colors.BOLD + Colors.CYAN + "        COMPLETE USB DEVICE SECURITY REPORT        " + Colors.END)
         print("━" * 60)
@@ -864,6 +872,7 @@ def handle_usb_device(device):
         print("\n" + "-" * 60)
         print(f" Hardware Risk  : {base_risk}")
         print(f" Storage Risk   : {storage_risk}")
+        print(f" HID Risk       : {hid_risk}")
         print(f" Total Risk     : {total_risk}")
         print(f" Threat Level   : {threat_level(total_risk)}")
         if scanned_paths:
@@ -881,12 +890,15 @@ def handle_usb_device(device):
         print("━" * 60 + "\n")
         
         # Generate the PDF Report
-        generate_pdf_report(usb_info, base_risk, storage_risk, total_risk, malware_detected, flags)
+        generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags)
         
-        # If the device is clean and no malicious hardware identified, release from quarantine
-        safe_to_use = bool(scanned_paths) and not malware_detected and base_risk == 0 and storage_risk == 0
+        # Storage access is decided by the file scan. Minor descriptor warnings
+        # such as a missing serial are reported, but do not reject clean storage.
+        safe_to_use = bool(scanned_paths) and not malware_detected and storage_risk == 0
         if safe_to_use:
             print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
+            if base_risk > 0:
+                print(Colors.YELLOW + f"[*] Hardware warning kept for report only; storage scan is clean. Hardware risk: {base_risk}" + Colors.END)
             for item in scanned_storage:
                 release_storage_for_use(
                     item["device_node"],
@@ -900,6 +912,7 @@ def handle_usb_device(device):
                 print(Colors.YELLOW + "[!] Could not determine sysfs port to authorize." + Colors.END)
         else:
             print(Colors.RED + "[!] Device is NOT SAFE. Keeping storage unavailable." + Colors.END)
+            print(Colors.RED + f"    Reason: malware_detected={malware_detected}, storage_risk={storage_risk}, scanned_paths={len(scanned_paths)}" + Colors.END)
             for item in scanned_storage:
                 keep_storage_blocked(
                     item["device_node"],
@@ -1408,6 +1421,16 @@ def _process_hid_event(event_name, seen_events):
 
     # ── Final score ───────────────────────────────────────────────────────────
     total_risk = risk_score + injection_risk + process_risk
+    
+    if vid_pid not in HID_RISK_CACHE:
+        HID_RISK_CACHE[vid_pid] = {"risk": 0, "flags": []}
+    HID_RISK_CACHE[vid_pid]["risk"] += total_risk
+    HID_RISK_CACHE[vid_pid]["flags"].extend(flags)
+    if injection_risk > 0:
+        HID_RISK_CACHE[vid_pid]["flags"].append("Keystroke injection pattern detected")
+    if process_risk > 0:
+        HID_RISK_CACHE[vid_pid]["flags"].append("Suspicious process correlation detected")
+
     print(f" Total Risk Score   : {total_risk}")
     print(f" Threat Level       : {threat_level(total_risk)}")
 
