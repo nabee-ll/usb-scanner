@@ -55,6 +55,22 @@ HID_WHITELIST = {
     "1c4f:0034": "SIGMACHIP USB Mouse",            # now whitelisted
 }
 
+WHITELIST_FILE = os.path.join(os.path.dirname(__file__), "whitelist.json")
+
+if os.path.exists(WHITELIST_FILE):
+    try:
+        with open(WHITELIST_FILE, "r") as f:
+            HID_WHITELIST.update(json.load(f))
+    except Exception:
+        pass
+
+def save_whitelist():
+    try:
+        with open(WHITELIST_FILE, "w") as f:
+            json.dump(HID_WHITELIST, f, indent=4)
+    except Exception:
+        pass
+
 
 def format_vid_pid(vid, pid):
     """Normalize vendor/product IDs to the whitelist key format."""
@@ -1084,6 +1100,20 @@ def handle_usb_device(device):
                 print(Colors.GREEN + "[*] Device SANITIZED. Accepting device for user access..." + Colors.END)
             else:
                 print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
+                
+            # Ask the user if they want to whitelist this clean device
+            if not sanitized and vid_pid not in HID_WHITELIST:
+                print()
+                while True:
+                    wl_input = input(Colors.YELLOW + f"  [*] Do you want to add this device ({vid_pid}) to the trusted whitelist? (y/n): " + Colors.END).strip().lower()
+                    if wl_input in ['y', 'n']:
+                        break
+                if wl_input == 'y':
+                    HID_WHITELIST[vid_pid] = f"{usb_info.get('vendor', 'Unknown')} {usb_info.get('model', 'USB Device')}"
+                    save_whitelist()
+                    print(Colors.GREEN + f"  [+] Device {vid_pid} permanently added to whitelist." + Colors.END)
+                print()
+
             if base_risk > 0:
                 print(Colors.YELLOW + f"[*] Hardware warning kept for report only; storage scan is clean. Hardware risk: {base_risk}" + Colors.END)
             for item in scanned_storage:
