@@ -808,6 +808,24 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
             pdf.set_font("Helvetica", '', 10)
             pdf.cell(col2, 8, str(hid_risk), ln=1)
             
+            pdf.ln(2)
+            pdf.set_draw_color(0, 0, 0)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(2)
+            
+            pdf.set_font("Helvetica", 'B', 11)
+            pdf.cell(col1, 8, "Total Risk Score:")
+            pdf.set_font("Helvetica", 'B', 11)
+            pdf.cell(col2, 8, str(total_risk), ln=1)
+            
+            if sanitized:
+                pdf.ln(4)
+                pdf.set_fill_color(255, 243, 205)
+                pdf.set_text_color(133, 100, 4)
+                pdf.set_font("Helvetica", 'B', 10)
+                pdf.multi_cell(0, 8, "[SANITIZED] Malicious files were deleted by user. Drive was allowed after cleanup.", border=1, align='C', fill=True)
+                pdf.set_text_color(0, 0, 0)
+            
             pdf.ln(6)
             
             # 6. Malware Warning if applicable
@@ -859,12 +877,15 @@ def handle_usb_device(device):
         print(Colors.CYAN + "\n[ EVENT ] USB Device Detected - Analyzing..." + Colors.END)
         time.sleep(3)
 
+        # ── Phase 1: Hardware / HID analysis ──────────────────────────────────
         base_risk, flags = structural_rules(usb_info)
         hid_data = HID_RISK_CACHE.get(vid_pid, {"risk": 0, "flags": []})
         hid_risk = hid_data["risk"]
         flags.extend(hid_data["flags"])
         
-        storage_risk, malware_detected = 0, False
+        # ── Phase 2: Storage scan ─────────────────────────────────────────────
+        storage_risk = 0
+        malware_detected = False
         has_storage = False
         scanned_paths = []
         scanned_storage = []
@@ -936,75 +957,115 @@ def handle_usb_device(device):
         if not has_storage:
             flags.append("No block storage or MTP/PTP file-transfer interface found")
 
+        # ── Phase 3: Save ORIGINAL scan results (before any user intervention) ──
+        original_storage_risk = storage_risk
+        original_malware_detected = malware_detected
+        original_total_risk = base_risk + storage_risk + hid_risk
+
+        # ── Phase 4: Sanitization prompt ──────────────────────────────────────
         sanitized = False
         if malware_detected and all_malicious_files:
-            print("\n" + Colors.YELLOW + "[!] The following malicious files were found:" + Colors.END)
-            for f in all_malicious_files:
-                print(f"  - {f}")
-            user_input = input(Colors.YELLOW + "Do you want to permanently delete these files to safely use the drive? (y/n): " + Colors.END).strip().lower()
+            print("\n" + "=" * 60)
+            print(Colors.RED + Colors.BOLD + "  [!] MALICIOUS FILES DETECTED ON THIS DRIVE" + Colors.END)
+            print("=" * 60)
+            print(Colors.YELLOW + f"  Found {len(all_malicious_files)} dangerous file(s):" + Colors.END)
+            for i, f in enumerate(all_malicious_files, 1):
+                print(Colors.RED + f"    {i}. {f}" + Colors.END)
+            print()
+            print(Colors.CYAN + "  You have two options:" + Colors.END)
+            print("    [y] DELETE the malicious files and allow access to the rest of the drive")
+            print("    [n] BLOCK the entire drive (no access)")
+            print()
+            user_input = input(Colors.YELLOW + Colors.BOLD + "  Do you want to sanitize this drive? (y/n): " + Colors.END).strip().lower()
+
             if user_input == 'y':
+                print()
                 all_deleted = True
                 for f in all_malicious_files:
                     try:
                         os.remove(f)
-                        print(Colors.GREEN + f"  [✓] Deleted {f}" + Colors.END)
+                        print(Colors.GREEN + f"  [OK] Deleted: {f}" + Colors.END)
                     except Exception as e:
-                        print(Colors.RED + f"  [!] Failed to delete {f}: {e}" + Colors.END)
+                        print(Colors.RED + f"  [FAIL] Could not delete {f}: {e}" + Colors.END)
                         all_deleted = False
                 
                 if all_deleted:
                     malware_detected = False
                     storage_risk = 0
                     sanitized = True
-                    flags.append("Remediation: Malicious files were deleted by user.")
-                    print(Colors.GREEN + "[*] All malicious files removed. Drive is now safe." + Colors.END)
+                    flags.append(f"REMEDIATION: {len(all_malicious_files)} malicious file(s) were deleted by user")
+                    print(Colors.GREEN + Colors.BOLD + "\n  [OK] All malicious files removed. Drive is now safe to use." + Colors.END)
                 else:
-                    print(Colors.RED + "[!] Some malicious files could not be removed. Drive will remain blocked." + Colors.END)
+                    flags.append("REMEDIATION FAILED: Some malicious files could not be deleted")
+                    print(Colors.RED + "\n  [!] Some files could not be removed. Drive will remain BLOCKED." + Colors.END)
             else:
-                print(Colors.RED + "[*] User opted not to delete. Drive will remain blocked." + Colors.END)
+                flags.append("User declined sanitization; drive blocked")
+                print(Colors.RED + "\n  [!] User declined. Drive will remain BLOCKED." + Colors.END)
+            print("=" * 60)
 
+        # ── Phase 5: Final risk calculation (post-sanitization) ───────────────
         total_risk = base_risk + storage_risk + hid_risk
-        print("\n" + "━" * 60)
+
+        # ── Phase 6: Terminal Report ──────────────────────────────────────────
+        print("\n" + "=" * 60)
         print(Colors.BOLD + Colors.CYAN + "        COMPLETE USB DEVICE SECURITY REPORT        " + Colors.END)
-        print("━" * 60)
-        print(f" Time           : {datetime.now()}")
-        print(f" Vendor         : {usb_info['vendor']}")
-        print(f" Model          : {usb_info['model']}")
-        print(f" VID:PID        : {vid_pid}")
-        print(f" Serial         : {usb_info['serial']}")
-        print(f" USB Class      : {usb_info['usb_class']}")
-        print(f" USB Driver     : {usb_info['usb_driver']}")
-        print("\n" + "-" * 60)
-        print(f" Hardware Risk  : {base_risk}")
-        print(f" Storage Risk   : {storage_risk}")
-        print(f" HID Risk       : {hid_risk}")
-        print(f" Total Risk     : {total_risk}")
-        print(f" Threat Level   : {threat_level(total_risk)}")
+        print("=" * 60)
+        print(f"  Time           : {datetime.now()}")
+        print(f"  Vendor         : {usb_info['vendor']}")
+        print(f"  Model          : {usb_info['model']}")
+        print(f"  VID:PID        : {vid_pid}")
+        print(f"  Serial         : {usb_info['serial']}")
+        print(f"  USB Class      : {usb_info['usb_class']}")
+        print(f"  USB Driver     : {usb_info['usb_driver']}")
+        print("-" * 60)
+        print(f"  Hardware Risk  : {base_risk}")
+        print(f"  Storage Risk   : {original_storage_risk}" + (f" -> 0 (sanitized)" if sanitized else ""))
+        print(f"  HID Risk       : {hid_risk}")
         if sanitized:
-            print(Colors.YELLOW + f" Remediation    : SANITIZED (Malware Deleted)" + Colors.END)
+            print(f"  Original Total : {original_total_risk}")
+            print(f"  Final Total    : {total_risk} (after sanitization)")
+        else:
+            print(f"  Total Risk     : {total_risk}")
+        print(f"  Threat Level   : {threat_level(total_risk)}")
+        if sanitized:
+            print(Colors.GREEN + Colors.BOLD + "  Status         : SANITIZED - Drive cleaned and allowed" + Colors.END)
+        elif malware_detected:
+            print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Malware detected" + Colors.END)
         if scanned_paths:
-            print("\n Scanned Paths:")
+            print(f"\n  Scanned Paths:")
             for path in scanned_paths:
-                print(f"  - {path}")
+                print(f"    - {path}")
         if vid_pid in HID_WHITELIST:
-            print(f"\n✓ HID Whitelist  : {HID_WHITELIST[vid_pid]}")
-        if malware_detected:
-            print("\n" + Colors.RED + Colors.BOLD + "⚠️  MALWARE DETECTED ON DEVICE ⚠️" + Colors.END)
+            print(f"\n  HID Whitelist  : {HID_WHITELIST[vid_pid]}")
         if flags:
-            print("\n Hardware Flags:")
+            print(f"\n  Flags / Findings:")
             for f in flags:
-                print(f"  • {f}")
-        print("━" * 60 + "\n")
+                print(f"    - {f}")
+        print("=" * 60 + "\n")
         
-        # Generate the PDF Report
-        generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags, sanitized=sanitized)
+        # ── Phase 7: Generate PDF Report ──────────────────────────────────────
+        # The PDF must reflect the ORIGINAL scan findings, not the post-sanitization state.
+        # We pass both original and sanitized values so the PDF is accurate.
+        generate_pdf_report(
+            usb_info,
+            base_risk,
+            original_storage_risk,
+            hid_risk,
+            original_total_risk,
+            original_malware_detected,
+            flags,
+            sanitized=sanitized,
+        )
         
-        # Storage access is decided by the file scan. Minor descriptor warnings
-        # such as a missing serial are reported, but do not reject clean storage.
-        # A sanitized device (user deleted malware) is also safe to use.
+        # ── Phase 8: Device access decision ───────────────────────────────────
+        # A sanitized device is safe. A clean-scanned device is safe.
+        # Everything else stays blocked.
         safe_to_use = sanitized or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
         if safe_to_use:
-            print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
+            if sanitized:
+                print(Colors.GREEN + "[*] Device SANITIZED. Accepting device for user access..." + Colors.END)
+            else:
+                print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
             if base_risk > 0:
                 print(Colors.YELLOW + f"[*] Hardware warning kept for report only; storage scan is clean. Hardware risk: {base_risk}" + Colors.END)
             for item in scanned_storage:
@@ -1019,8 +1080,16 @@ def handle_usb_device(device):
             else:
                 print(Colors.YELLOW + "[!] Could not determine sysfs port to authorize." + Colors.END)
         else:
-            print(Colors.RED + "[!] Device is NOT SAFE. Keeping storage unavailable." + Colors.END)
-            print(Colors.RED + f"    Reason: malware_detected={malware_detected}, storage_risk={storage_risk}, scanned_paths={len(scanned_paths)}" + Colors.END)
+            reason_parts = []
+            if malware_detected:
+                reason_parts.append("malware found on device")
+            if storage_risk > 0:
+                reason_parts.append(f"storage risk score = {storage_risk}")
+            if not scanned_paths:
+                reason_parts.append("no partitions could be scanned")
+            reason_str = ", ".join(reason_parts) if reason_parts else "unknown"
+            print(Colors.RED + f"[!] Device is NOT SAFE. Keeping storage unavailable." + Colors.END)
+            print(Colors.RED + f"    Reason: {reason_str}" + Colors.END)
             for item in scanned_storage:
                 keep_storage_blocked(
                     item["device_node"],
@@ -1031,9 +1100,10 @@ def handle_usb_device(device):
             if usb_port:
                 deauthorize_usb_device(usb_port)
 
-        print(Colors.GREEN + "[✓] Device analysis complete. Ready for next device..." + Colors.END)
+        print(Colors.GREEN + "[OK] Device analysis complete. Ready for next device..." + Colors.END)
     except Exception as e:
         print(Colors.RED + f"\n[!] Error handling USB device: {e}" + Colors.END)
+
 
 def monitor_usb():
     print(Colors.CYAN + Colors.BOLD + "\n[*] Intelligent USB Security Engine Started" + Colors.END)

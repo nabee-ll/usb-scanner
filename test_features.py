@@ -137,8 +137,8 @@ def main():
 
             before = set(os.listdir(reports_dir))
             generate_pdf_report(
-                {"vendor": "SelfTest", "model": "USB", "vid": "0000", "pid": "0000", "serial": "TEST"},
-                0, 0, 0, False, ["automated self-test"],
+                {"vendor": "SelfTest", "model": "USB", "vid": "0000", "pid": "0000", "serial": "TEST", "usb_class": "Test", "usb_driver": "Test"},
+                0, 0, 0, 0, False, ["automated self-test"],
             )
             after = set(os.listdir(reports_dir))
             new_pdfs = [f for f in after - before if f.endswith(".pdf")]
