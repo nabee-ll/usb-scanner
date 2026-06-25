@@ -733,7 +733,7 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
             # 2. Threat Level Banner
             level_str = "CLEAN"
             fill_r, fill_g, fill_b = 39, 174, 96 # Green
-            if total_risk >= 15:
+            if malware_detected or total_risk >= 15:
                 level_str = "HIGH RISK - DEVICE BLOCKED"
                 fill_r, fill_g, fill_b = 192, 57, 43 # Red
             elif total_risk >= 8:
@@ -890,8 +890,8 @@ def handle_usb_device(device):
                         if pm:
                             malware_detected = True
                     else:
-                        malware_detected = True
-                        flags.append(f"Could not mount {block_device.device_node} for safety scan")
+                        storage_risk += 15
+                        flags.append(f"Could not mount {block_device.device_node} for safety scan (blocked by default)")
                         print(Colors.RED + f"[!] Could not mount {block_device.device_node} for safety scan" + Colors.END)
 
         if not has_storage and is_mtp_or_ptp_device(device):
@@ -912,7 +912,8 @@ def handle_usb_device(device):
                     if pm:
                         malware_detected = True
             else:
-                flags.append("MTP/PTP phone detected but no accessible file-transfer mount found")
+                storage_risk += 15
+                flags.append("MTP/PTP phone detected but no accessible file-transfer mount found (blocked by default)")
                 print(Colors.YELLOW +
                       "[!] Phone detected, but files are not accessible. Unlock the phone and select File Transfer/MTP." +
                       Colors.END)
