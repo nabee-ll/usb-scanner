@@ -983,6 +983,16 @@ def handle_usb_device(device):
 
             if user_input == 'y':
                 print()
+                
+                # The drive was mounted read-only for safety during the scan.
+                # We must temporarily remount it as read-write to delete the viruses.
+                for item in scanned_storage:
+                    if item["quarantine_mount"]:
+                        try:
+                            subprocess.run(["mount", "-o", "remount,rw", item["mount_path"]], capture_output=True)
+                        except Exception:
+                            pass
+
                 all_deleted = True
                 for f in all_malicious_files:
                     try:
