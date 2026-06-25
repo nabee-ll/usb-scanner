@@ -304,8 +304,13 @@ def find_mount_point(device_node):
 def try_mount_with_udisks(device_node):
     """Ask udisks to mount the partition when desktop auto-mount is slow or missing."""
     try:
+        cmd = ["udisksctl", "mount", "-b", device_node, "--no-user-interaction"]
+        sudo_user = os.environ.get("SUDO_USER")
+        if sudo_user:
+            cmd = ["sudo", "-u", sudo_user] + cmd
+            
         result = subprocess.run(
-            ["udisksctl", "mount", "-b", device_node, "--no-user-interaction"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30,
@@ -1128,14 +1133,19 @@ def monitor_usb():
     processed_devices = set()
     try:
         for device in iter(monitor.poll, None):
-            if device.action == "add" and device.get("DEVTYPE") == "usb_device":
+            if device.get("DEVTYPE") == "usb_device":
                 device_id = (f"{device.get('ID_VENDOR_ID')}:{device.get('ID_MODEL_ID')}"
                              f":{device.get('ID_SERIAL_SHORT', '')}")
-                if device_id in processed_devices:
-                    continue
-                processed_devices.add(device_id)
-                t = threading.Thread(target=handle_usb_device, args=(device,), daemon=True)
-                t.start()
+                if device.action == "add":
+                    if device_id in processed_devices:
+                        continue
+                    processed_devices.add(device_id)
+                    t = threading.Thread(target=handle_usb_device, args=(device,), daemon=True)
+                    t.start()
+                elif device.action == "remove":
+                    if device_id in processed_devices:
+                        processed_devices.remove(device_id)
+                    
                 if len(processed_devices) > 100:
                     processed_devices.clear()
     except KeyboardInterrupt:
