@@ -578,6 +578,7 @@ def scan_storage(mount_path, device_info=None):
     master_risk_score = 0
     malware_detected = False
     all_files = []
+    malicious_files = []
     
     try:
         for root, dirs, files in os.walk(mount_path):
@@ -612,6 +613,7 @@ def scan_storage(mount_path, device_info=None):
             
             if risk_level in ["HIGH", "MEDIUM"]:
                 malware_detected = True
+                malicious_files.append(path)
             
             # Print cleanly
             if risk_level == "HIGH":
@@ -641,7 +643,7 @@ def scan_storage(mount_path, device_info=None):
                 pass
 
     print(" " * 80, end="\r")
-    return master_risk_score, malware_detected
+    return master_risk_score, malware_detected, malicious_files
 
 # ==========================================
 # THREAT LEVEL LABEL
@@ -703,7 +705,7 @@ def print_whitelisted_hid_report(usb_info, vid_pid):
     print("━" * 60 + "\n")
     print(Colors.GREEN + "[✓] Device analysis complete. Ready for next device..." + Colors.END)
 
-def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags):
+def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags, sanitized=False):
     if FPDF is None:
         print(Colors.YELLOW +
               "[!] PDF skipped — install dependencies: .venv/bin/pip install -r requirements.txt" +
@@ -733,7 +735,10 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
             # 2. Threat Level Banner
             level_str = "CLEAN"
             fill_r, fill_g, fill_b = 39, 174, 96 # Green
-            if malware_detected or total_risk >= 15:
+            if sanitized:
+                level_str = "HIGH RISK - DEVICE SANITIZED (ALLOWED)"
+                fill_r, fill_g, fill_b = 241, 196, 15 # Yellow/Orange
+            elif malware_detected or total_risk >= 15:
                 level_str = "HIGH RISK - DEVICE BLOCKED"
                 fill_r, fill_g, fill_b = 192, 57, 43 # Red
             elif total_risk >= 8:
@@ -863,6 +868,7 @@ def handle_usb_device(device):
         has_storage = False
         scanned_paths = []
         scanned_storage = []
+        all_malicious_files = []
         antivirus_available = _clamav_command() is not None
 
         context = pyudev.Context()
@@ -885,10 +891,11 @@ def handle_usb_device(device):
                             "quarantine_mount": quarantine_mount,
                             "safe": False,
                         })
-                        pr, pm = scan_storage(mount, usb_info)
+                        pr, pm, pbad = scan_storage(mount, usb_info)
                         storage_risk += pr
                         if pm:
                             malware_detected = True
+                            all_malicious_files.extend(pbad)
                     else:
                         storage_risk += 15
                         flags.append(f"Could not mount {block_device.device_node} for safety scan (blocked by default)")
@@ -907,10 +914,11 @@ def handle_usb_device(device):
                 for mount in mtp_mounts:
                     print(f"[+] Phone storage accessible at {mount}")
                     scanned_paths.append(mount)
-                    pr, pm = scan_storage(mount, usb_info)
+                    pr, pm, pbad = scan_storage(mount, usb_info)
                     storage_risk += pr
                     if pm:
                         malware_detected = True
+                        all_malicious_files.extend(pbad)
             else:
                 storage_risk += 15
                 flags.append("MTP/PTP phone detected but no accessible file-transfer mount found (blocked by default)")
@@ -920,6 +928,33 @@ def handle_usb_device(device):
 
         if not has_storage:
             flags.append("No block storage or MTP/PTP file-transfer interface found")
+
+        sanitized = False
+        if malware_detected and all_malicious_files:
+            print("\n" + Colors.YELLOW + "[!] The following malicious files were found:" + Colors.END)
+            for f in all_malicious_files:
+                print(f"  - {f}")
+            user_input = input(Colors.YELLOW + "Do you want to permanently delete these files to safely use the drive? (y/n): " + Colors.END).strip().lower()
+            if user_input == 'y':
+                all_deleted = True
+                for f in all_malicious_files:
+                    try:
+                        os.remove(f)
+                        print(Colors.GREEN + f"  [✓] Deleted {f}" + Colors.END)
+                    except Exception as e:
+                        print(Colors.RED + f"  [!] Failed to delete {f}: {e}" + Colors.END)
+                        all_deleted = False
+                
+                if all_deleted:
+                    malware_detected = False
+                    storage_risk = 0
+                    sanitized = True
+                    flags.append("Remediation: Malicious files were deleted by user.")
+                    print(Colors.GREEN + "[*] All malicious files removed. Drive is now safe." + Colors.END)
+                else:
+                    print(Colors.RED + "[!] Some malicious files could not be removed. Drive will remain blocked." + Colors.END)
+            else:
+                print(Colors.RED + "[*] User opted not to delete. Drive will remain blocked." + Colors.END)
 
         total_risk = base_risk + storage_risk + hid_risk
         print("\n" + "━" * 60)
@@ -938,6 +973,8 @@ def handle_usb_device(device):
         print(f" HID Risk       : {hid_risk}")
         print(f" Total Risk     : {total_risk}")
         print(f" Threat Level   : {threat_level(total_risk)}")
+        if sanitized:
+            print(Colors.YELLOW + f" Remediation    : SANITIZED (Malware Deleted)" + Colors.END)
         if scanned_paths:
             print("\n Scanned Paths:")
             for path in scanned_paths:
@@ -953,7 +990,7 @@ def handle_usb_device(device):
         print("━" * 60 + "\n")
         
         # Generate the PDF Report
-        generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags)
+        generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags, sanitized=sanitized)
         
         # Storage access is decided by the file scan. Minor descriptor warnings
         # such as a missing serial are reported, but do not reject clean storage.
