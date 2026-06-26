@@ -14,12 +14,17 @@ QLabel {
     background: transparent;
 }
 
-QFrame#glassCard,
-QWidget#glassCard,
 QDialog#modalDialog,
 QWidget#bottomNavigation {
     background: transparent;
     border: 1px solid rgba(205, 217, 232, 0.86);
+    border-radius: 16px;
+}
+
+QFrame#glassCard,
+QWidget#glassCard {
+    background: transparent;
+    border: none;
     border-radius: 16px;
 }
 
@@ -99,7 +104,8 @@ QToolTip {
 }
 
 QWidget#dashboardPage {
-    background: #f4f7fb;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #eef6ff, stop:0.48 #f7f9fc, stop:1 #e8f1fb);
 }
 
 QLabel#dashboardTitle {
@@ -141,7 +147,8 @@ QLabel#activityRow {
 
 QWidget#scanPage,
 QWidget#scanContent {
-    background: #f4f7fb;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #eef6ff, stop:0.52 #f7f9fc, stop:1 #e8f1fb);
 }
 
 QLabel#scanTitle {
