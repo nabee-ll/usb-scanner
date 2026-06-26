@@ -2137,6 +2137,8 @@ if __name__ == "__main__":
         sys.exit(0)
     
     # ── Normal USB monitoring mode ────────────────────────────────────────
+    db_path = ensure_database()
+    
     # Ensure required directories exist
     os.makedirs(QUARANTINE_DIR, exist_ok=True)
     _fix_file_ownership(QUARANTINE_DIR)
