@@ -46,25 +46,29 @@ class Colors:
 # ==========================================
 HID_RISK_CACHE = {}
 
-HID_WHITELIST = {
-    "413c:2113": "Dell KB216 Wired Keyboard",     # corrected PID
-    "413c:3020": "Dell KB216 Wired Keyboard (alt)",
-    "0461:4d15": "Primax Electronics Keyboard",
-    "046d:c534": "Logitech USB Receiver",
-    "093a:2510": "PixArt Optical USB Mouse",
-    "1c4f:0034": "SIGMACHIP USB Mouse",            # now whitelisted
-}
-
 WHITELIST_FILE = os.path.join(os.path.dirname(__file__), "whitelist.json")
 QUARANTINE_DIR = os.path.join(os.path.dirname(__file__), "quarantine")
 QUARANTINE_LOG = os.path.join(QUARANTINE_DIR, "quarantine_log.json")
 
-if os.path.exists(WHITELIST_FILE):
-    try:
-        with open(WHITELIST_FILE, "r") as f:
-            HID_WHITELIST.update(json.load(f))
-    except Exception:
-        pass
+def load_whitelist():
+    global HID_WHITELIST
+    # Reset to base hardcoded whitelist
+    HID_WHITELIST = {
+        "413c:2113": "Dell KB216 Wired Keyboard",
+        "413c:3020": "Dell KB216 Wired Keyboard (alt)",
+        "0461:4d15": "Primax Electronics Keyboard",
+        "046d:c534": "Logitech USB Receiver",
+        "093a:2510": "PixArt Optical USB Mouse",
+        "1c4f:0034": "SIGMACHIP USB Mouse",
+    }
+    if os.path.exists(WHITELIST_FILE):
+        try:
+            with open(WHITELIST_FILE, "r") as f:
+                HID_WHITELIST.update(json.load(f))
+        except Exception:
+            pass
+
+load_whitelist()
 
 def save_whitelist():
     try:
@@ -1144,6 +1148,7 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
 
 def handle_usb_device(device):
     try:
+        load_whitelist()
         usb_info = analyze_descriptors(device)
         vid_pid = format_vid_pid(usb_info["vid"], usb_info["pid"])
 
@@ -1858,6 +1863,7 @@ def _process_hid_event(event_name, seen_events):
         return
     seen_events.add(event_name)
 
+    load_whitelist()
     connection_time = time.time()
 
     device_info = None
