@@ -219,14 +219,18 @@ def purge_quarantine():
 # DESKTOP / SOUND ALERT SYSTEM
 # ==========================================
 def _play_tone(frequency=800, duration_ms=300, repeat=1):
-    """Generate and play a tone using aplay (available on all Raspberry Pi OS installations).
+    """Generate and play a tone through the user's audio session.
+    Uses paplay (PulseAudio) under the original user so it works when running as sudo.
+    Falls back to aplay, then terminal bell if nothing works.
     Runs in a background thread so it never blocks the main scan flow."""
     def _do_play():
         try:
-            sample_rate = 8000
-            samples = int(sample_rate * duration_ms / 1000)
             import wave
+            sample_rate = 44100
+            samples = int(sample_rate * duration_ms / 1000)
+            
             for _ in range(repeat):
+                # Generate WAV in memory
                 buf = io.BytesIO()
                 with wave.open(buf, 'wb') as wf:
                     wf.setnchannels(1)
@@ -235,18 +239,57 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                     for i in range(samples):
                         val = int(32767 * math.sin(2 * math.pi * frequency * i / sample_rate))
                         wf.writeframes(struct.pack('<h', val))
-                buf.seek(0)
-                proc = subprocess.Popen(
-                    ['aplay', '-q', '-'],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                proc.communicate(input=buf.read(), timeout=5)
+                wav_data = buf.getvalue()
+                
+                played = False
+                sudo_user = os.environ.get("SUDO_USER")
+                sudo_uid = os.environ.get("SUDO_UID")
+                
+                # Method 1: paplay via PulseAudio (what YouTube uses)
+                if not played and shutil.which("paplay"):
+                    try:
+                        # Write to a temp file since paplay doesn't read stdin well
+                        tmp_wav = "/tmp/_usb_scanner_alert.wav"
+                        with open(tmp_wav, "wb") as f:
+                            f.write(wav_data)
+                        
+                        env = os.environ.copy()
+                        cmd = ["paplay", tmp_wav]
+                        if sudo_user and sudo_uid:
+                            env["PULSE_SERVER"] = f"unix:/run/user/{sudo_uid}/pulse/native"
+                            cmd = ["sudo", "-u", sudo_user, "--preserve-env=PULSE_SERVER"] + cmd
+                        
+                        result = subprocess.run(cmd, env=env, capture_output=True, timeout=5)
+                        if result.returncode == 0:
+                            played = True
+                    except Exception:
+                        pass
+                
+                # Method 2: aplay (raw ALSA, works without PulseAudio)
+                if not played and shutil.which("aplay"):
+                    try:
+                        proc = subprocess.Popen(
+                            ['aplay', '-q', '-'],
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        proc.communicate(input=wav_data, timeout=5)
+                        if proc.returncode == 0:
+                            played = True
+                    except Exception:
+                        pass
+                
+                # Method 3: Terminal bell (always works)
+                if not played:
+                    print("\a", end="", flush=True)
+                
                 if repeat > 1:
                     time.sleep(0.15)
         except Exception:
-            pass  # Sound is best-effort; never crash the scanner
+            # Sound is best-effort; print terminal bell as absolute fallback
+            for _ in range(repeat):
+                print("\a", end="", flush=True)
     threading.Thread(target=_do_play, daemon=True).start()
 
 
