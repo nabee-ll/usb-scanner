@@ -1,13 +1,13 @@
 QWidget {
     font-family: "Inter", "Segoe UI", sans-serif;
     font-size: 14px;
-    color: #f2f6ff;
-    background: #101319;
-    selection-background-color: #5eb1ff;
+    color: #f4f1e8;
+    background: #121313;
+    selection-background-color: #43d17a;
 }
 
 QMainWindow {
-    background: #101319;
+    background: #121313;
 }
 
 QLabel {
@@ -36,18 +36,18 @@ QPushButton {
 }
 
 QPushButton#primaryButton {
-    color: #07101c;
-    background: #5eb1ff;
+    color: #07100b;
+    background: #43d17a;
     border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 QPushButton#primaryButton:hover {
-    background: #8fc8ff;
+    background: #6ee391;
 }
 
 QPushButton#secondaryButton,
 QPushButton#navigationButton {
-    color: #f2f6ff;
+    color: #f4f1e8;
     background: rgba(255, 255, 255, 0.10);
     border: 1px solid rgba(255, 255, 255, 0.16);
 }
@@ -58,13 +58,13 @@ QPushButton#navigationButton:hover {
 }
 
 QPushButton#dangerButton {
-    color: #07101c;
-    background: #ff6961;
+    color: #15090b;
+    background: #ff7a86;
     border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 QPushButton#dangerButton:hover {
-    background: #ff837d;
+    background: #ff98a1;
 }
 
 QProgressBar#glassProgressBar {
@@ -78,7 +78,7 @@ QProgressBar#glassProgressBar {
 
 QProgressBar#glassProgressBar::chunk {
     border-radius: 7px;
-    background: #5eb1ff;
+    background: #43d17a;
 }
 
 QLabel#statusChip {
@@ -89,15 +89,15 @@ QLabel#statusChip {
 }
 
 QFrame#notificationToast {
-    background: rgba(242, 246, 255, 0.88);
-    color: #101319;
+    background: rgba(244, 241, 232, 0.88);
+    color: #121313;
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 16px;
 }
 
 QToolTip {
-    color: #f2f6ff;
-    background: rgba(34, 39, 50, 0.94);
+    color: #f4f1e8;
+    background: rgba(25, 27, 24, 0.94);
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 8px;
     padding: 8px 10px;
@@ -105,38 +105,38 @@ QToolTip {
 
 QWidget#dashboardPage {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #111826, stop:0.5 #101319, stop:1 #172131);
+        stop:0 #171615, stop:0.48 #111411, stop:1 #1a2018);
 }
 
 QLabel#dashboardTitle {
     font-size: 28px;
     font-weight: 760;
-    color: #f2f6ff;
+    color: #f4f1e8;
 }
 
 QLabel#dashboardSubtitle,
 QLabel#dashboardDate,
 QLabel#cardBody,
 QLabel#activityRow {
-    color: #a7b1c2;
+    color: #b6b0a4;
 }
 
 QLabel#dashboardTime {
     font-size: 20px;
     font-weight: 720;
-    color: #f2f6ff;
+    color: #f4f1e8;
 }
 
 QLabel#cardTitle {
     font-size: 17px;
     font-weight: 720;
-    color: #f2f6ff;
+    color: #f4f1e8;
 }
 
 QLabel#dashboardMetric {
     font-size: 34px;
     font-weight: 760;
-    color: #f2f6ff;
+    color: #f4f1e8;
 }
 
 QLabel#activityRow {
@@ -148,25 +148,25 @@ QLabel#activityRow {
 QWidget#scanPage,
 QWidget#scanContent {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #111826, stop:0.5 #101319, stop:1 #172131);
+        stop:0 #171615, stop:0.5 #111411, stop:1 #1a2018);
 }
 
 QLabel#scanTitle {
     font-size: 24px;
     font-weight: 780;
-    color: #f2f6ff;
+    color: #f4f1e8;
 }
 
 QLabel#scanSubtitle,
 QLabel#scanInfoLabel,
 QLabel#scanLogRow {
-    color: #a7b1c2;
+    color: #b6b0a4;
 }
 
 QLabel#scanMetric {
     font-size: 28px;
     font-weight: 760;
-    color: #5eb1ff;
+    color: #43d17a;
 }
 
 QWidget#scanInfoRow,
@@ -176,7 +176,7 @@ QLabel#scanLogRow {
 }
 
 QLabel#scanInfoValue {
-    color: #f2f6ff;
+    color: #f4f1e8;
     font-weight: 680;
 }
 

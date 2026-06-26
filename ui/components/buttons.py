@@ -113,7 +113,7 @@ class PrimaryButton(AnimatedButton):
 
 class SecondaryButton(AnimatedButton):
     object_name = "secondaryButton"
-    ripple_color = QColor(10, 132, 255, 60)
+    ripple_color = QColor(47, 191, 113, 58)
 
 
 class DangerButton(AnimatedButton):

@@ -1,12 +1,12 @@
 QWidget {
     font-family: "Inter", "Segoe UI", sans-serif;
     font-size: 14px;
-    color: #172033;
-    background: #f4f7fb;
+    color: #1f2320;
+    background: #f8f6f1;
 }
 
 QMainWindow {
-    background: #f4f7fb;
+    background: #f8f6f1;
 }
 
 QFrame#glassCard,
@@ -16,9 +16,9 @@ QWidget#glassCard {
 }
 
 QToolTip {
-    color: #172033;
-    background: rgba(255, 255, 255, 0.92);
-    border: 1px solid rgba(255, 255, 255, 0.86);
+    color: #1f2320;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.58);
     border-radius: 8px;
     padding: 8px 10px;
 }

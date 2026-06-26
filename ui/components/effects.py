@@ -23,7 +23,7 @@ def color_from_css(value: str) -> QColor:
 
 def add_shadow(
     widget: QWidget,
-    color: str = "rgba(35, 48, 70, 0.18)",
+    color: str = "rgba(31, 35, 32, 0.16)",
     blur_radius: int = 26,
     y_offset: int = 12,
 ) -> QGraphicsDropShadowEffect:
@@ -37,7 +37,7 @@ def add_shadow(
 
 def add_glow(
     widget: QWidget,
-    color: str = "rgba(10, 132, 255, 0.34)",
+    color: str = "rgba(47, 191, 113, 0.28)",
     blur_radius: int = 30,
 ) -> QGraphicsDropShadowEffect:
     effect = QGraphicsDropShadowEffect(widget)

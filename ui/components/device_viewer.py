@@ -32,10 +32,10 @@ class AnimatedDeviceViewer(QWidget):
         pulse = (math.sin(self._phase) + 1.0) / 2.0
 
         panel_gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        panel_gradient.setColorAt(0.0, QColor(255, 255, 255, 178))
-        panel_gradient.setColorAt(0.45, QColor(224, 240, 255, 106))
-        panel_gradient.setColorAt(1.0, QColor(94, 177, 255, 92))
-        painter.setPen(QPen(QColor(255, 255, 255, 210), 1.4))
+        panel_gradient.setColorAt(0.0, QColor(255, 255, 255, 96))
+        panel_gradient.setColorAt(0.45, QColor(246, 244, 232, 62))
+        panel_gradient.setColorAt(1.0, QColor(47, 191, 113, 46))
+        painter.setPen(QPen(QColor(255, 255, 255, 142), 1.4))
         painter.setBrush(panel_gradient)
         painter.drawRoundedRect(rect, 22, 22)
 
@@ -50,7 +50,7 @@ class AnimatedDeviceViewer(QWidget):
         shimmer.setColorAt(1.0, QColor(255, 255, 255, 0))
         painter.fillRect(rect, shimmer)
 
-        painter.setPen(QPen(QColor(10, 132, 255, 48), 2))
+        painter.setPen(QPen(QColor(47, 191, 113, 42), 2))
         wave_y = rect.center().y() + int(math.sin(self._phase * 1.4) * 14)
         painter.drawLine(rect.left() + 36, wave_y, rect.right() - 36, wave_y)
 

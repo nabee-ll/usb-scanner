@@ -22,7 +22,7 @@ class GlassCard(QFrame):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(14)
-        add_shadow(self, color="rgba(35, 48, 70, 0.16)", blur_radius=22, y_offset=8)
+        add_shadow(self, color="rgba(31, 35, 32, 0.14)", blur_radius=24, y_offset=8)
 
     def paintEvent(self, event) -> None:  # noqa: ANN001
         del event
@@ -37,15 +37,15 @@ class GlassCard(QFrame):
         app = QApplication.instance()
         is_dark = app is not None and app.property("theme_name") == "dark"
         if is_dark:
-            top = QColor(78, 88, 108, 178)
-            bottom = QColor(22, 28, 40, 146)
-            border = QColor(255, 255, 255, 82)
-            inner = QColor(94, 177, 255, 44)
+            top = QColor(255, 255, 255, 32)
+            bottom = QColor(255, 255, 255, 14)
+            border = QColor(255, 255, 255, 54)
+            inner = QColor(67, 209, 122, 22)
         else:
-            top = QColor(255, 255, 255, 238)
-            bottom = QColor(235, 246, 255, 176)
-            border = QColor(255, 255, 255, 255)
-            inner = QColor(10, 132, 255, 44)
+            top = QColor(255, 255, 255, 118)
+            bottom = QColor(255, 255, 255, 54)
+            border = QColor(255, 255, 255, 150)
+            inner = QColor(47, 191, 113, 24)
 
         fill = QLinearGradient(rect.topLeft(), rect.bottomRight())
         fill.setColorAt(0.0, top)
@@ -54,9 +54,9 @@ class GlassCard(QFrame):
         painter.fillPath(path, fill)
 
         glow = QLinearGradient(rect.bottomLeft(), rect.topRight())
-        glow.setColorAt(0.0, QColor(10, 132, 255, 40 if not is_dark else 36))
+        glow.setColorAt(0.0, QColor(47, 191, 113, 24 if not is_dark else 28))
         glow.setColorAt(0.45, QColor(255, 255, 255, 0))
-        glow.setColorAt(1.0, QColor(255, 255, 255, 50 if not is_dark else 24))
+        glow.setColorAt(1.0, QColor(255, 255, 255, 42 if not is_dark else 18))
         painter.fillPath(path, glow)
 
         shine_rect = QRectF(
@@ -68,7 +68,7 @@ class GlassCard(QFrame):
         shine_path = QPainterPath()
         shine_path.addRoundedRect(shine_rect, radius - 2, radius - 2)
         shine = QLinearGradient(shine_rect.topLeft(), shine_rect.bottomLeft())
-        shine.setColorAt(0.0, QColor(255, 255, 255, 94 if is_dark else 150))
+        shine.setColorAt(0.0, QColor(255, 255, 255, 46 if is_dark else 82))
         shine.setColorAt(1.0, QColor(255, 255, 255, 0))
         painter.fillPath(shine_path.intersected(path), shine)
 
@@ -78,5 +78,5 @@ class GlassCard(QFrame):
         inset = rect.adjusted(1.5, 1.5, -1.5, -1.5)
         inset_path = QPainterPath()
         inset_path.addRoundedRect(inset, radius - 2, radius - 2)
-        painter.setPen(QPen(QColor(255, 255, 255, 84 if is_dark else 150), 0.8))
+        painter.setPen(QPen(QColor(255, 255, 255, 46 if is_dark else 82), 0.8))
         painter.drawPath(inset_path)

@@ -1,13 +1,13 @@
 QWidget {
     font-family: "Inter", "Segoe UI", sans-serif;
     font-size: 14px;
-    color: #172033;
-    background: #f4f7fb;
-    selection-background-color: #0a84ff;
+    color: #1f2320;
+    background: #f8f6f1;
+    selection-background-color: #2fbf71;
 }
 
 QMainWindow {
-    background: #f4f7fb;
+    background: #f8f6f1;
 }
 
 QLabel {
@@ -17,7 +17,7 @@ QLabel {
 QDialog#modalDialog,
 QWidget#bottomNavigation {
     background: transparent;
-    border: 1px solid rgba(205, 217, 232, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.58);
     border-radius: 16px;
 }
 
@@ -37,48 +37,48 @@ QPushButton {
 
 QPushButton#primaryButton {
     color: #ffffff;
-    background: #0a84ff;
-    border: 1px solid rgba(255, 255, 255, 0.42);
+    background: #218c5a;
+    border: 1px solid rgba(255, 255, 255, 0.52);
 }
 
 QPushButton#primaryButton:hover {
-    background: #006ee6;
+    background: #1a754b;
 }
 
 QPushButton#secondaryButton,
 QPushButton#navigationButton {
-    color: #172033;
-    background: rgba(255, 255, 255, 0.54);
-    border: 1px solid rgba(255, 255, 255, 0.78);
+    color: #252920;
+    background: rgba(255, 255, 255, 0.34);
+    border: 1px solid rgba(255, 255, 255, 0.54);
 }
 
 QPushButton#secondaryButton:hover,
 QPushButton#navigationButton:hover {
-    background: rgba(255, 255, 255, 0.78);
+    background: rgba(255, 255, 255, 0.50);
 }
 
 QPushButton#dangerButton {
     color: #ffffff;
-    background: #ff3b30;
-    border: 1px solid rgba(255, 255, 255, 0.36);
+    background: #d14b57;
+    border: 1px solid rgba(255, 255, 255, 0.42);
 }
 
 QPushButton#dangerButton:hover {
-    background: #d92d24;
+    background: #b93643;
 }
 
 QProgressBar#glassProgressBar {
     min-height: 14px;
     max-height: 14px;
     border-radius: 7px;
-    background: rgba(255, 255, 255, 0.52);
-    border: 1px solid rgba(255, 255, 255, 0.74);
+    background: rgba(255, 255, 255, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.44);
     text-align: center;
 }
 
 QProgressBar#glassProgressBar::chunk {
     border-radius: 7px;
-    background: #0a84ff;
+    background: #2fbf71;
 }
 
 QLabel#statusChip {
@@ -89,94 +89,94 @@ QLabel#statusChip {
 }
 
 QFrame#notificationToast {
-    background: rgba(23, 32, 51, 0.88);
+    background: rgba(31, 35, 32, 0.88);
     color: #ffffff;
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 16px;
 }
 
 QToolTip {
-    color: #172033;
-    background: rgba(255, 255, 255, 0.92);
-    border: 1px solid rgba(255, 255, 255, 0.86);
+    color: #1f2320;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.58);
     border-radius: 8px;
     padding: 8px 10px;
 }
 
 QWidget#dashboardPage {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #eef6ff, stop:0.48 #f7f9fc, stop:1 #e8f1fb);
+        stop:0 #fbf4ec, stop:0.46 #f6f7ef, stop:1 #edf7f0);
 }
 
 QLabel#dashboardTitle {
     font-size: 28px;
     font-weight: 760;
-    color: #172033;
+    color: #1f2320;
 }
 
 QLabel#dashboardSubtitle,
 QLabel#dashboardDate,
 QLabel#cardBody,
 QLabel#activityRow {
-    color: #637083;
+    color: #6e6a60;
 }
 
 QLabel#dashboardTime {
     font-size: 20px;
     font-weight: 720;
-    color: #172033;
+    color: #1f2320;
 }
 
 QLabel#cardTitle {
     font-size: 17px;
     font-weight: 720;
-    color: #172033;
+    color: #1f2320;
 }
 
 QLabel#dashboardMetric {
     font-size: 34px;
     font-weight: 760;
-    color: #172033;
+    color: #1f2320;
 }
 
 QLabel#activityRow {
     padding: 0 10px;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.38);
+    background: rgba(255, 255, 255, 0.24);
 }
 
 QWidget#scanPage,
 QWidget#scanContent {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #eef6ff, stop:0.52 #f7f9fc, stop:1 #e8f1fb);
+        stop:0 #fbf4ec, stop:0.50 #f7f5ef, stop:1 #edf7f0);
 }
 
 QLabel#scanTitle {
     font-size: 24px;
     font-weight: 780;
-    color: #172033;
+    color: #1f2320;
 }
 
 QLabel#scanSubtitle,
 QLabel#scanInfoLabel,
 QLabel#scanLogRow {
-    color: #637083;
+    color: #6e6a60;
 }
 
 QLabel#scanMetric {
     font-size: 28px;
     font-weight: 760;
-    color: #0a84ff;
+    color: #218c5a;
 }
 
 QWidget#scanInfoRow,
 QLabel#scanLogRow {
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.46);
+    background: rgba(255, 255, 255, 0.24);
 }
 
 QLabel#scanInfoValue {
-    color: #172033;
+    color: #1f2320;
     font-weight: 680;
 }
 

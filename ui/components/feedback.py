@@ -31,10 +31,10 @@ class StatusChip(QLabel):
     """Compact status label for device and scan states."""
 
     COLORS = {
-        "neutral": ("rgba(99, 112, 131, 0.16)", "#637083"),
-        "success": ("rgba(52, 199, 89, 0.18)", "#1f8f3d"),
-        "warning": ("rgba(255, 159, 10, 0.20)", "#a96400"),
-        "danger": ("rgba(255, 59, 48, 0.18)", "#c92820"),
+        "neutral": ("rgba(112, 108, 96, 0.14)", "#6c6659"),
+        "success": ("rgba(47, 191, 113, 0.18)", "#218c5a"),
+        "warning": ("rgba(217, 119, 6, 0.18)", "#995c05"),
+        "danger": ("rgba(209, 75, 87, 0.18)", "#b93643"),
     }
 
     def __init__(
@@ -87,11 +87,11 @@ class RiskMeter(QWidget):
         painter.setPen(background_pen)
         painter.drawArc(int(rect_x), int(rect_y), side, side, 225 * 16, -270 * 16)
 
-        color = QColor("#34c759")
+        color = QColor("#2fbf71")
         if self._value >= 70:
-            color = QColor("#ff3b30")
+            color = QColor("#d14b57")
         elif self._value >= 40:
-            color = QColor("#ff9f0a")
+            color = QColor("#d97706")
 
         value_pen = QPen(color, 12)
         value_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
