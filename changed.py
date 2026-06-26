@@ -248,7 +248,7 @@ def purge_quarantine():
 # ==========================================
 def _play_tone(frequency=800, duration_ms=300, repeat=1):
     """Generate and play a tone through the user's audio session.
-    Uses paplay (PulseAudio) under the original user so it works when running as sudo.
+    Uses paplay (PulseAudio) or pw-play (PipeWire) under the original user so it works when running as sudo.
     Falls back to aplay, then terminal bell if nothing works.
     Runs in a background thread so it never blocks the main scan flow."""
     def _do_play():
@@ -278,60 +278,103 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                     f.write(wav_data)
                 os.chmod(tmp_wav, 0o644)
                 
-                # PipeWire exposes a PulseAudio-compatible socket at this path.
-                # This is the EXACT same audio path that YouTube/browsers use.
-                pipewire_sock = f"unix:/run/user/{sudo_uid}/pulse/native"
-                
-                # Method 1: paplay (pulseaudio-utils) → works via PipeWire socket
-                if not played and shutil.which("paplay"):
+                # Determine user home directory for config/cookie access
+                user_home = f"/home/{sudo_user}" if sudo_user else "/home/pi"
+                if sudo_user:
                     try:
-                        env = {"PULSE_SERVER": pipewire_sock, "HOME": f"/home/{sudo_user}"}
-                        cmd = ["sudo", "-u", sudo_user, "paplay", tmp_wav]
-                        result = subprocess.run(cmd, env=env, capture_output=True, timeout=6)
-                        print(f"[DEBUG AUDIO] paplay returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
-                        if result.returncode == 0:
-                            played = True
-                    except Exception as e:
-                        print(f"[DEBUG AUDIO] paplay exception: {e}")
+                        import pwd
+                        user_home = pwd.getpwnam(sudo_user).pw_dir
+                    except Exception:
+                        pass
+                
+                attempts = []
+                if sudo_user:
+                    xdg = f"/run/user/{sudo_uid}"
+                    dbus = f"unix:path=/run/user/{sudo_uid}/bus"
+                    pipewire_sock = f"unix:/run/user/{sudo_uid}/pulse/native"
+                    
+                    # 1. paplay (standard auto-detection with full env)
+                    if shutil.which("paplay"):
+                        attempts.append({
+                            "name": "paplay (auto env)",
+                            "cmd": ["sudo", "-u", sudo_user, "env",
+                                    f"XDG_RUNTIME_DIR={xdg}",
+                                    f"DBUS_SESSION_BUS_ADDRESS={dbus}",
+                                    f"HOME={user_home}",
+                                    f"USER={sudo_user}",
+                                    "paplay", tmp_wav]
+                        })
+                        # 2. paplay (explicit socket)
+                        attempts.append({
+                            "name": "paplay (explicit socket)",
+                            "cmd": ["sudo", "-u", sudo_user, "env",
+                                    f"PULSE_SERVER={pipewire_sock}",
+                                    f"XDG_RUNTIME_DIR={xdg}",
+                                    f"DBUS_SESSION_BUS_ADDRESS={dbus}",
+                                    f"HOME={user_home}",
+                                    f"USER={sudo_user}",
+                                    "paplay", tmp_wav]
+                        })
+                    
+                    # 3. pw-play (PipeWire native player)
+                    if shutil.which("pw-play"):
+                        attempts.append({
+                            "name": "pw-play",
+                            "cmd": ["sudo", "-u", sudo_user, "env",
+                                    f"XDG_RUNTIME_DIR={xdg}",
+                                    f"DBUS_SESSION_BUS_ADDRESS={dbus}",
+                                    f"HOME={user_home}",
+                                    f"USER={sudo_user}",
+                                    "pw-play", tmp_wav]
+                        })
+                    
+                    # 4. aplay as desktop user (Pulse-ALSA plugin)
+                    if shutil.which("aplay"):
+                        attempts.append({
+                            "name": "aplay (user)",
+                            "cmd": ["sudo", "-u", sudo_user, "env",
+                                    f"XDG_RUNTIME_DIR={xdg}",
+                                    f"DBUS_SESSION_BUS_ADDRESS={dbus}",
+                                    f"HOME={user_home}",
+                                    f"USER={sudo_user}",
+                                    "aplay", "-q", tmp_wav]
+                        })
+                        
+                    # 5. aplay as root (direct ALSA hardware interface)
+                    if shutil.which("aplay"):
+                        attempts.append({
+                            "name": "aplay (root)",
+                            "cmd": ["aplay", "-q", tmp_wav]
+                        })
                 else:
-                    print("[DEBUG AUDIO] paplay not found → install with: sudo apt install pulseaudio-utils")
-                
-                # Method 2: pw-play (PipeWire native player)
-                if not played and shutil.which("pw-play"):
+                    # Running natively as user (not under sudo)
+                    if shutil.which("paplay"):
+                        attempts.append({"name": "paplay (native)", "cmd": ["paplay", tmp_wav]})
+                    if shutil.which("pw-play"):
+                        attempts.append({"name": "pw-play (native)", "cmd": ["pw-play", tmp_wav]})
+                    if shutil.which("aplay"):
+                        attempts.append({"name": "aplay (native)", "cmd": ["aplay", "-q", tmp_wav]})
+
+                for attempt in attempts:
                     try:
-                        xdg = f"/run/user/{sudo_uid}"
-                        env = {"XDG_RUNTIME_DIR": xdg, "HOME": f"/home/{sudo_user}"}
-                        cmd = ["sudo", "-u", sudo_user, "pw-play", tmp_wav]
-                        result = subprocess.run(cmd, env=env, capture_output=True, timeout=6)
-                        print(f"[DEBUG AUDIO] pw-play returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
+                        result = subprocess.run(attempt["cmd"], capture_output=True, timeout=6)
+                        err = result.stderr.decode(errors='replace').strip()
+                        print(f"[DEBUG AUDIO] {attempt['name']} returncode={result.returncode} stderr={err}")
                         if result.returncode == 0:
                             played = True
+                            break
                     except Exception as e:
-                        print(f"[DEBUG AUDIO] pw-play exception: {e}")
-                else:
-                    if not played:
-                        print("[DEBUG AUDIO] pw-play not found")
+                        print(f"[DEBUG AUDIO] {attempt['name']} exception: {e}")
                 
-                # Method 3: aplay on default hardware device
-                if not played and shutil.which("aplay"):
-                    try:
-                        cmd = ["sudo", "-u", sudo_user, "aplay", "-q", tmp_wav]
-                        result = subprocess.run(cmd, capture_output=True, timeout=6)
-                        print(f"[DEBUG AUDIO] aplay(hw) returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
-                        if result.returncode == 0:
-                            played = True
-                    except Exception as e:
-                        print(f"[DEBUG AUDIO] aplay exception: {e}")
-                
-                # Method 4: Terminal bell
+                # Terminal bell fallback
                 if not played:
                     print("[DEBUG AUDIO] All methods failed, using terminal bell")
                     print("\a", end="", flush=True)
                 
                 if repeat > 1:
                     time.sleep(0.15)
-        except Exception:
-            # Sound is best-effort; print terminal bell as absolute fallback
+        except Exception as e:
+            print(f"[DEBUG AUDIO] Play tone root exception: {e}")
             for _ in range(repeat):
                 print("\a", end="", flush=True)
     threading.Thread(target=_do_play, daemon=True).start()
