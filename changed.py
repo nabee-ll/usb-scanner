@@ -56,6 +56,8 @@ HID_WHITELIST = {
 }
 
 WHITELIST_FILE = os.path.join(os.path.dirname(__file__), "whitelist.json")
+QUARANTINE_DIR = os.path.join(os.path.dirname(__file__), "quarantine")
+QUARANTINE_LOG = os.path.join(QUARANTINE_DIR, "quarantine_log.json")
 
 if os.path.exists(WHITELIST_FILE):
     try:
@@ -70,6 +72,147 @@ def save_whitelist():
             json.dump(HID_WHITELIST, f, indent=4)
     except Exception:
         pass
+
+
+def move_to_quarantine(file_path, device_info=None):
+    """Move a malicious file to the quarantine vault instead of deleting it.
+    Saves metadata so the file can be identified and restored later."""
+    os.makedirs(QUARANTINE_DIR, mode=0o700, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    original_name = os.path.basename(file_path)
+    # Use timestamp + original name to avoid collisions
+    quarantined_name = f"{timestamp}_{original_name}.quarantined"
+    quarantined_path = os.path.join(QUARANTINE_DIR, quarantined_name)
+    
+    try:
+        shutil.move(file_path, quarantined_path)
+        # Remove execute permissions from quarantined file
+        os.chmod(quarantined_path, 0o400)
+    except Exception as e:
+        raise e
+    
+    # Save metadata
+    entry = {
+        "quarantined_name": quarantined_name,
+        "original_path": file_path,
+        "original_name": original_name,
+        "timestamp": datetime.now().isoformat(),
+        "device_vid_pid": f"{device_info.get('vid', '?')}:{device_info.get('pid', '?')}" if device_info else "unknown",
+        "device_model": device_info.get("model", "Unknown") if device_info else "Unknown",
+    }
+    
+    log_entries = []
+    if os.path.exists(QUARANTINE_LOG):
+        try:
+            with open(QUARANTINE_LOG, "r") as f:
+                log_entries = json.load(f)
+        except Exception:
+            pass
+    log_entries.append(entry)
+    try:
+        with open(QUARANTINE_LOG, "w") as f:
+            json.dump(log_entries, f, indent=4)
+    except Exception:
+        pass
+    
+    return quarantined_path
+
+
+def list_quarantine():
+    """List all files in the quarantine vault."""
+    if not os.path.exists(QUARANTINE_LOG):
+        print(Colors.YELLOW + "\n[*] Quarantine vault is empty.\n" + Colors.END)
+        return []
+    try:
+        with open(QUARANTINE_LOG, "r") as f:
+            entries = json.load(f)
+    except Exception:
+        print(Colors.RED + "[!] Could not read quarantine log." + Colors.END)
+        return []
+    
+    if not entries:
+        print(Colors.YELLOW + "\n[*] Quarantine vault is empty.\n" + Colors.END)
+        return []
+    
+    print("\n" + "=" * 70)
+    print(Colors.BOLD + Colors.CYAN + "           QUARANTINE VAULT            " + Colors.END)
+    print("=" * 70)
+    print(f"  Location: {QUARANTINE_DIR}")
+    print(f"  Files:    {len(entries)}")
+    print("-" * 70)
+    
+    for i, entry in enumerate(entries, 1):
+        quarantined_file = os.path.join(QUARANTINE_DIR, entry["quarantined_name"])
+        exists = os.path.exists(quarantined_file)
+        status = Colors.GREEN + "STORED" + Colors.END if exists else Colors.RED + "MISSING" + Colors.END
+        print(f"  {i}. {Colors.BOLD}{entry['original_name']}{Colors.END}")
+        print(f"     Original Path : {entry['original_path']}")
+        print(f"     Quarantined   : {entry['timestamp']}")
+        print(f"     Source Device : {entry.get('device_model', '?')} ({entry.get('device_vid_pid', '?')})")
+        print(f"     Status        : {status}")
+        print()
+    
+    print("=" * 70 + "\n")
+    return entries
+
+
+def restore_from_quarantine(index):
+    """Restore a quarantined file back to its original location."""
+    if not os.path.exists(QUARANTINE_LOG):
+        print(Colors.RED + "[!] No quarantine log found." + Colors.END)
+        return False
+    try:
+        with open(QUARANTINE_LOG, "r") as f:
+            entries = json.load(f)
+    except Exception:
+        print(Colors.RED + "[!] Could not read quarantine log." + Colors.END)
+        return False
+    
+    if index < 1 or index > len(entries):
+        print(Colors.RED + f"[!] Invalid index. Valid range: 1-{len(entries)}" + Colors.END)
+        return False
+    
+    entry = entries[index - 1]
+    quarantined_file = os.path.join(QUARANTINE_DIR, entry["quarantined_name"])
+    
+    if not os.path.exists(quarantined_file):
+        print(Colors.RED + f"[!] Quarantined file not found: {entry['quarantined_name']}" + Colors.END)
+        return False
+    
+    original_path = entry["original_path"]
+    try:
+        os.makedirs(os.path.dirname(original_path), exist_ok=True)
+        shutil.move(quarantined_file, original_path)
+        print(Colors.GREEN + f"[+] Restored: {entry['original_name']} -> {original_path}" + Colors.END)
+        
+        # Remove entry from log
+        entries.pop(index - 1)
+        with open(QUARANTINE_LOG, "w") as f:
+            json.dump(entries, f, indent=4)
+        return True
+    except Exception as e:
+        print(Colors.RED + f"[!] Failed to restore: {e}" + Colors.END)
+        return False
+
+
+def purge_quarantine():
+    """Permanently delete all quarantined files."""
+    if not os.path.exists(QUARANTINE_DIR):
+        print(Colors.YELLOW + "[*] Quarantine vault is already empty." + Colors.END)
+        return
+    
+    count = 0
+    for f in os.listdir(QUARANTINE_DIR):
+        fpath = os.path.join(QUARANTINE_DIR, f)
+        if os.path.isfile(fpath):
+            try:
+                os.remove(fpath)
+                count += 1
+            except Exception:
+                pass
+    
+    print(Colors.GREEN + f"[+] Quarantine vault purged. {count} file(s) permanently deleted." + Colors.END)
 
 
 def format_vid_pid(vid, pid):
@@ -995,8 +1138,11 @@ def handle_usb_device(device):
                 print(Colors.RED + f"    {i}. {f}" + Colors.END)
             print()
             print(Colors.CYAN + "  You have two options:" + Colors.END)
-            print("    [y] DELETE the malicious files and allow access to the rest of the drive")
+            print("    [y] QUARANTINE the malicious files and allow access to the rest of the drive")
             print("    [n] BLOCK the entire drive (no access)")
+            print()
+            print(Colors.CYAN + "  Note: Quarantined files are moved to a secure vault and can be" + Colors.END)
+            print(Colors.CYAN + "  restored later if they turn out to be false positives." + Colors.END)
             print()
             user_input = input(Colors.YELLOW + Colors.BOLD + "  Do you want to sanitize this drive? (y/n): " + Colors.END).strip().lower()
 
@@ -1012,24 +1158,28 @@ def handle_usb_device(device):
                         except Exception:
                             pass
 
-                all_deleted = True
+                all_quarantined = True
+                quarantined_count = 0
                 for f in all_malicious_files:
                     try:
-                        os.remove(f)
-                        print(Colors.GREEN + f"  [OK] Deleted: {f}" + Colors.END)
+                        q_path = move_to_quarantine(f, usb_info)
+                        quarantined_count += 1
+                        print(Colors.GREEN + f"  [OK] Quarantined: {os.path.basename(f)} -> vault" + Colors.END)
                     except Exception as e:
-                        print(Colors.RED + f"  [FAIL] Could not delete {f}: {e}" + Colors.END)
-                        all_deleted = False
+                        print(Colors.RED + f"  [FAIL] Could not quarantine {f}: {e}" + Colors.END)
+                        all_quarantined = False
                 
-                if all_deleted:
+                if all_quarantined:
                     malware_detected = False
                     storage_risk = 0
                     sanitized = True
-                    flags.append(f"REMEDIATION: {len(all_malicious_files)} malicious file(s) were deleted by user")
-                    print(Colors.GREEN + Colors.BOLD + "\n  [OK] All malicious files removed. Drive is now safe to use." + Colors.END)
+                    flags.append(f"REMEDIATION: {quarantined_count} malicious file(s) moved to quarantine vault")
+                    print(Colors.GREEN + Colors.BOLD + f"\n  [OK] All {quarantined_count} malicious files quarantined. Drive is now safe to use." + Colors.END)
+                    print(Colors.CYAN + f"  Quarantine vault: {QUARANTINE_DIR}" + Colors.END)
+                    print(Colors.CYAN + f"  To manage: python3 changed.py --quarantine list" + Colors.END)
                 else:
-                    flags.append("REMEDIATION FAILED: Some malicious files could not be deleted")
-                    print(Colors.RED + "\n  [!] Some files could not be removed. Drive will remain BLOCKED." + Colors.END)
+                    flags.append("REMEDIATION FAILED: Some malicious files could not be quarantined")
+                    print(Colors.RED + "\n  [!] Some files could not be quarantined. Drive will remain BLOCKED." + Colors.END)
             else:
                 flags.append("User declined sanitization; drive blocked")
                 print(Colors.RED + "\n  [!] User declined. Drive will remain BLOCKED." + Colors.END)
@@ -1739,9 +1889,51 @@ def hid_monitor():
 # MAIN ENTRY POINT
 # ==========================================
 if __name__ == "__main__":
+    import sys
+    
+    # ── Quarantine Vault CLI ──────────────────────────────────────────────
+    if len(sys.argv) >= 2 and sys.argv[1] == "--quarantine":
+        action = sys.argv[2] if len(sys.argv) >= 3 else "list"
+        
+        if action == "list":
+            list_quarantine()
+        elif action == "restore":
+            entries = list_quarantine()
+            if entries:
+                try:
+                    idx = int(input(Colors.YELLOW + "Enter the number of the file to restore: " + Colors.END))
+                    restore_from_quarantine(idx)
+                except (ValueError, KeyboardInterrupt):
+                    print("\nCancelled.")
+        elif action == "purge":
+            entries = list_quarantine()
+            if entries:
+                confirm = input(Colors.RED + Colors.BOLD + 
+                    f"Are you sure you want to PERMANENTLY DELETE all {len(entries)} quarantined file(s)? (yes/no): " + 
+                    Colors.END).strip().lower()
+                if confirm == "yes":
+                    purge_quarantine()
+                else:
+                    print("Cancelled.")
+        else:
+            print("Usage: python3 changed.py --quarantine [list|restore|purge]")
+        sys.exit(0)
+    
+    # ── Normal USB monitoring mode ────────────────────────────────────────
     db_path = ensure_database()
     print(Colors.GREEN + f"[*] Malware database: {db_path}" + Colors.END)
     print(Colors.GREEN + f"[*] HID whitelist: {len(HID_WHITELIST)} trusted device(s)" + Colors.END)
+    
+    # Show quarantine vault status
+    if os.path.exists(QUARANTINE_LOG):
+        try:
+            with open(QUARANTINE_LOG, "r") as f:
+                q_entries = json.load(f)
+            if q_entries:
+                print(Colors.YELLOW + f"[*] Quarantine vault: {len(q_entries)} file(s) stored" + Colors.END)
+        except Exception:
+            pass
+    
     if not is_root_user():
         print(Colors.YELLOW +
               "[!] Not running as root. USB storage can be scanned, but accept/block enforcement requires: sudo ./run.sh" +
