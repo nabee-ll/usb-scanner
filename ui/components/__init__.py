@@ -9,6 +9,7 @@ from ui.components.buttons import (
 )
 from ui.components.cards import GlassCard
 from ui.components.dialogs import ModalDialog
+from ui.components.device_viewer import AnimatedDeviceViewer
 from ui.components.feedback import (
     GlassProgressBar,
     NotificationToast,
@@ -18,6 +19,7 @@ from ui.components.feedback import (
 
 __all__ = [
     "BottomNavigation",
+    "AnimatedDeviceViewer",
     "DangerButton",
     "GlassCard",
     "GlassProgressBar",

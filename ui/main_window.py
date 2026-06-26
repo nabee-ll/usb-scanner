@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QMainWindow, QStackedWidget
 
 from core.context import AppContext
-from ui.pages import DashboardPage
+from ui.pages import DashboardPage, ScanPage
 
 
 class MainWindow(QMainWindow):
@@ -21,4 +21,5 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.stack)
         context.router.attach_stack(self.stack)
         context.router.register("dashboard", lambda: DashboardPage(context))
-        context.router.navigate("dashboard")
+        context.router.register("scan", lambda: ScanPage(context))
+        context.router.navigate("scan")

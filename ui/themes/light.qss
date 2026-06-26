@@ -138,3 +138,40 @@ QLabel#activityRow {
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.38);
 }
+
+QWidget#scanPage,
+QWidget#scanContent,
+QScrollArea#scanScrollArea,
+QScrollArea#scanScrollArea > QWidget,
+QScrollArea#scanScrollArea > QWidget > QWidget {
+    background: #f4f7fb;
+}
+
+QLabel#scanTitle {
+    font-size: 30px;
+    font-weight: 780;
+    color: #172033;
+}
+
+QLabel#scanSubtitle,
+QLabel#scanInfoLabel,
+QLabel#scanLogRow {
+    color: #637083;
+}
+
+QLabel#scanMetric {
+    font-size: 34px;
+    font-weight: 760;
+    color: #0a84ff;
+}
+
+QWidget#scanInfoRow,
+QLabel#scanLogRow {
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.38);
+}
+
+QLabel#scanInfoValue {
+    color: #172033;
+    font-weight: 680;
+}
