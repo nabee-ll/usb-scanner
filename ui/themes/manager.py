@@ -26,6 +26,7 @@ class ThemeManager:
         return theme_path.read_text(encoding="utf-8")
 
     def apply(self, app: QApplication, name: str) -> None:
+        app.setProperty("theme_name", name)
         app.setStyleSheet(self.load(name))
         self.current_theme = name
         self.tokens = THEME_TOKENS.get(name, THEME_TOKENS["light"])

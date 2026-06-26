@@ -18,7 +18,7 @@ QFrame#glassCard,
 QWidget#glassCard,
 QDialog#modalDialog,
 QWidget#bottomNavigation {
-    background: rgba(255, 255, 255, 0.78);
+    background: transparent;
     border: 1px solid rgba(205, 217, 232, 0.86);
     border-radius: 16px;
 }
