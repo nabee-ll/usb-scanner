@@ -50,6 +50,18 @@ WHITELIST_FILE = os.path.join(os.path.dirname(__file__), "whitelist.json")
 QUARANTINE_DIR = os.path.join(os.path.dirname(__file__), "quarantine")
 QUARANTINE_LOG = os.path.join(QUARANTINE_DIR, "quarantine_log.json")
 
+def _fix_file_ownership(filepath):
+    """If running as sudo, change file ownership to the original user."""
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        try:
+            import pwd
+            uid = pwd.getpwnam(sudo_user).pw_uid
+            gid = pwd.getpwnam(sudo_user).pw_gid
+            os.chown(filepath, uid, gid)
+        except Exception:
+            pass
+
 def load_whitelist():
     global HID_WHITELIST
     HID_WHITELIST = {}
@@ -67,6 +79,7 @@ def load_whitelist():
         try:
             with open(WHITELIST_FILE, "w") as f:
                 json.dump(default_whitelist, f, indent=4)
+            _fix_file_ownership(WHITELIST_FILE)
         except Exception:
             pass
 
@@ -83,6 +96,7 @@ def save_whitelist():
     try:
         with open(WHITELIST_FILE, "w") as f:
             json.dump(HID_WHITELIST, f, indent=4)
+        _fix_file_ownership(WHITELIST_FILE)
     except Exception:
         pass
 
