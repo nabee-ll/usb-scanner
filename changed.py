@@ -1093,7 +1093,9 @@ def handle_usb_device(device):
         # A sanitized device is safe. A clean-scanned device is safe.
         # Everything else stays blocked.
         if not has_storage:
-            safe_to_use = (hid_risk == 0 and base_risk == 0)
+            # For pure HID devices (mice/keyboards), allow them if there's no active HID attack.
+            # A base_risk of 1 or 2 (e.g., missing serial number) is common for cheap generic mice and shouldn't cause a strict block.
+            safe_to_use = (hid_risk == 0 and base_risk < 8)
         else:
             safe_to_use = sanitized or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
             
