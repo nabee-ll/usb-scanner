@@ -272,37 +272,42 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                 sudo_user = os.environ.get("SUDO_USER")
                 sudo_uid = os.environ.get("SUDO_UID")
                 
-                # Method 1: paplay via PulseAudio (what YouTube uses)
+                # Method 1: paplay via PulseAudio/PipeWire (what YouTube uses)
                 if not played and shutil.which("paplay"):
                     try:
-                        # Write to a temp file since paplay doesn't read stdin well
                         tmp_wav = "/tmp/_usb_scanner_alert.wav"
                         with open(tmp_wav, "wb") as f:
                             f.write(wav_data)
+                        os.chmod(tmp_wav, 0o644)  # Ensure user can read it
                         
-                        env = os.environ.copy()
-                        cmd = ["paplay", tmp_wav]
-                        if sudo_user and sudo_uid:
-                            env["PULSE_SERVER"] = f"unix:/run/user/{sudo_uid}/pulse/native"
-                            cmd = ["sudo", "-u", sudo_user, "--preserve-env=PULSE_SERVER"] + cmd
-                        
-                        result = subprocess.run(cmd, env=env, capture_output=True, timeout=5)
+                        if sudo_user:
+                            # Use su - to spawn a full login shell for the user.
+                            # This correctly sets up all audio environment variables (PipeWire, XDG_RUNTIME_DIR, DBUS).
+                            cmd = ["su", "-", sudo_user, "-c", f"paplay {tmp_wav}"]
+                        else:
+                            cmd = ["paplay", tmp_wav]
+                            
+                        result = subprocess.run(cmd, capture_output=True, timeout=5)
                         if result.returncode == 0:
                             played = True
                     except Exception:
                         pass
                 
-                # Method 2: aplay (raw ALSA, works without PulseAudio)
+                # Method 2: aplay using the user's environment
                 if not played and shutil.which("aplay"):
                     try:
-                        proc = subprocess.Popen(
-                            ['aplay', '-q', '-'],
-                            stdin=subprocess.PIPE,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                        proc.communicate(input=wav_data, timeout=5)
-                        if proc.returncode == 0:
+                        tmp_wav = "/tmp/_usb_scanner_alert.wav"
+                        with open(tmp_wav, "wb") as f:
+                            f.write(wav_data)
+                        os.chmod(tmp_wav, 0o644)
+                        
+                        if sudo_user:
+                            cmd = ["su", "-", sudo_user, "-c", f"aplay -q {tmp_wav}"]
+                        else:
+                            cmd = ["aplay", "-q", tmp_wav]
+                            
+                        result = subprocess.run(cmd, capture_output=True, timeout=5)
+                        if result.returncode == 0:
                             played = True
                     except Exception:
                         pass
