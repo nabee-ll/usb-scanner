@@ -867,11 +867,9 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
             if not flags and not malware_detected:
                 pdf.cell(0, 8, "No anomalies or malicious indicators were found on this device.", ln=1)
             else:
-                for f in flags:
-                    pdf.set_font("Helvetica", 'B', 10)
-                    pdf.cell(5, 6, "-")
-                    pdf.set_font("Helvetica", '', 10)
-                    pdf.multi_cell(0, 6, f)
+                flags_text = "\n".join(f"- {f}" for f in flags)
+                if flags_text:
+                    pdf.multi_cell(0, 6, flags_text)
             
             pdf.ln(15)
             # Footer
@@ -1094,9 +1092,15 @@ def handle_usb_device(device):
         # ── Phase 8: Device access decision ───────────────────────────────────
         # A sanitized device is safe. A clean-scanned device is safe.
         # Everything else stays blocked.
-        safe_to_use = sanitized or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
+        if not has_storage:
+            safe_to_use = (hid_risk == 0 and base_risk == 0)
+        else:
+            safe_to_use = sanitized or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
+            
         if safe_to_use:
-            if sanitized:
+            if not has_storage:
+                print(Colors.GREEN + "[*] Device is CLEAN. No storage to mount." + Colors.END)
+            elif sanitized:
                 print(Colors.GREEN + "[*] Device SANITIZED. Accepting device for user access..." + Colors.END)
             else:
                 print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
