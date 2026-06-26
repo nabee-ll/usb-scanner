@@ -271,42 +271,38 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                 
                 played = False
                 sudo_user = os.environ.get("SUDO_USER")
-                sudo_uid = os.environ.get("SUDO_UID")
+                sudo_uid = os.environ.get("SUDO_UID", "")
                 
-                # Method 1: paplay via PulseAudio/PipeWire (what YouTube uses)
-                if not played and shutil.which("paplay"):
+                tmp_wav = "/tmp/_usb_scanner_alert.wav"
+                with open(tmp_wav, "wb") as f:
+                    f.write(wav_data)
+                os.chmod(tmp_wav, 0o644)
+                
+                # Method 1: paplay via PipeWire/PulseAudio with explicit session path
+                # XDG_RUNTIME_DIR is required so paplay can find the PipeWire socket.
+                if not played and shutil.which("paplay") and sudo_user:
                     try:
-                        tmp_wav = "/tmp/_usb_scanner_alert.wav"
-                        with open(tmp_wav, "wb") as f:
-                            f.write(wav_data)
-                        os.chmod(tmp_wav, 0o644)
-                        
-                        if sudo_user:
-                            cmd = ["su", "-", sudo_user, "-c", f"paplay {tmp_wav}"]
-                        else:
-                            cmd = ["paplay", tmp_wav]
-                            
-                        result = subprocess.run(cmd, capture_output=True, timeout=5)
-                        print(f"[DEBUG AUDIO] paplay returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
+                        xdg = f"/run/user/{sudo_uid}" if sudo_uid else f"/run/user/$(id -u {sudo_user})"
+                        cmd_str = f"XDG_RUNTIME_DIR={xdg} paplay {tmp_wav}"
+                        result = subprocess.run(
+                            ["su", "-", sudo_user, "-c", cmd_str],
+                            capture_output=True, timeout=6
+                        )
+                        print(f"[DEBUG AUDIO] paplay(PipeWire) returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
                         if result.returncode == 0:
                             played = True
                     except Exception as e:
                         print(f"[DEBUG AUDIO] paplay exception: {e}")
                 
-                # Method 2: aplay using the user's environment
-                if not played and shutil.which("aplay"):
+                # Method 2: aplay with PipeWire session path
+                if not played and shutil.which("aplay") and sudo_user:
                     try:
-                        tmp_wav = "/tmp/_usb_scanner_alert.wav"
-                        with open(tmp_wav, "wb") as f:
-                            f.write(wav_data)
-                        os.chmod(tmp_wav, 0o644)
-                        
-                        if sudo_user:
-                            cmd = ["su", "-", sudo_user, "-c", f"aplay -q {tmp_wav}"]
-                        else:
-                            cmd = ["aplay", "-q", tmp_wav]
-                            
-                        result = subprocess.run(cmd, capture_output=True, timeout=5)
+                        xdg = f"/run/user/{sudo_uid}" if sudo_uid else f"/run/user/$(id -u {sudo_user})"
+                        cmd_str = f"XDG_RUNTIME_DIR={xdg} aplay -q {tmp_wav}"
+                        result = subprocess.run(
+                            ["su", "-", sudo_user, "-c", cmd_str],
+                            capture_output=True, timeout=6
+                        )
                         print(f"[DEBUG AUDIO] aplay returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
                         if result.returncode == 0:
                             played = True
