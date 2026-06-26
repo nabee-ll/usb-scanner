@@ -282,7 +282,7 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                 # This is the EXACT same audio path that YouTube/browsers use.
                 pipewire_sock = f"unix:/run/user/{sudo_uid}/pulse/native"
                 
-                # Method 1: paplay pointing directly at the PipeWire socket
+                # Method 1: paplay (pulseaudio-utils) → works via PipeWire socket
                 if not played and shutil.which("paplay"):
                     try:
                         env = {"PULSE_SERVER": pipewire_sock, "HOME": f"/home/{sudo_user}"}
@@ -294,22 +294,36 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                     except Exception as e:
                         print(f"[DEBUG AUDIO] paplay exception: {e}")
                 else:
-                    print(f"[DEBUG AUDIO] paplay not found, trying aplay")
+                    print("[DEBUG AUDIO] paplay not found → install with: sudo apt install pulseaudio-utils")
                 
-                # Method 2: aplay pointing at the PipeWire ALSA plugin via PulseAudio socket
+                # Method 2: pw-play (PipeWire native player)
+                if not played and shutil.which("pw-play"):
+                    try:
+                        xdg = f"/run/user/{sudo_uid}"
+                        env = {"XDG_RUNTIME_DIR": xdg, "HOME": f"/home/{sudo_user}"}
+                        cmd = ["sudo", "-u", sudo_user, "pw-play", tmp_wav]
+                        result = subprocess.run(cmd, env=env, capture_output=True, timeout=6)
+                        print(f"[DEBUG AUDIO] pw-play returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
+                        if result.returncode == 0:
+                            played = True
+                    except Exception as e:
+                        print(f"[DEBUG AUDIO] pw-play exception: {e}")
+                else:
+                    if not played:
+                        print("[DEBUG AUDIO] pw-play not found")
+                
+                # Method 3: aplay on default hardware device
                 if not played and shutil.which("aplay"):
                     try:
-                        env = {"PULSE_SERVER": pipewire_sock, "HOME": f"/home/{sudo_user}"}
-                        # Use plug:pulse device to route ALSA through PipeWire
-                        cmd = ["sudo", "-u", sudo_user, "aplay", "-D", "plug:pulse", "-q", tmp_wav]
-                        result = subprocess.run(cmd, env=env, capture_output=True, timeout=6)
-                        print(f"[DEBUG AUDIO] aplay(pulse) returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
+                        cmd = ["sudo", "-u", sudo_user, "aplay", "-q", tmp_wav]
+                        result = subprocess.run(cmd, capture_output=True, timeout=6)
+                        print(f"[DEBUG AUDIO] aplay(hw) returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
                         if result.returncode == 0:
                             played = True
                     except Exception as e:
                         print(f"[DEBUG AUDIO] aplay exception: {e}")
                 
-                # Method 3: Terminal bell
+                # Method 4: Terminal bell
                 if not played:
                     print("[DEBUG AUDIO] All methods failed, using terminal bell")
                     print("\a", end="", flush=True)
