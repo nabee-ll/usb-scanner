@@ -243,6 +243,114 @@ def purge_quarantine():
     print(Colors.GREEN + f"[+] Quarantine vault purged. {count} file(s) permanently deleted." + Colors.END)
 
 
+def show_history():
+    """Print a formatted terminal table of all past scans from scan_log.json."""
+    log_file = os.path.join(os.path.dirname(__file__), "scan_log.json")
+    if not os.path.exists(log_file):
+        print(Colors.YELLOW + "[*] No scan history log found." + Colors.END)
+        return
+        
+    entries = []
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        pass
+    except Exception as e:
+        print(Colors.RED + f"[!] Failed to read scan history log: {e}" + Colors.END)
+        return
+
+    if not entries:
+        print(Colors.YELLOW + "[*] Scan history log is empty." + Colors.END)
+        return
+
+    print(Colors.CYAN + Colors.BOLD + f"\n=== USB SCAN HISTORY ({len(entries)} entries) ===" + Colors.END)
+    
+    col_widths = {
+        "time": 16,
+        "device": 20,
+        "file": 24,
+        "risk": 8,
+        "issue": 35
+    }
+    
+    def truncate(s, w):
+        s = str(s)
+        return s[:w-3] + "..." if len(s) > w else s
+        
+    def format_row(time_str, device_str, file_str, risk_str, issue_str, colors=False):
+        t_val = truncate(time_str, col_widths["time"]).ljust(col_widths["time"])
+        d_val = truncate(device_str, col_widths["device"]).ljust(col_widths["device"])
+        f_val = truncate(file_str, col_widths["file"]).ljust(col_widths["file"])
+        
+        if colors:
+            if "HIGH" in risk_str:
+                r_val = (Colors.RED + Colors.BOLD + risk_str + Colors.END).ljust(col_widths["risk"] + len(Colors.RED) + len(Colors.BOLD) + len(Colors.END))
+            elif "MEDIUM" in risk_str:
+                r_val = (Colors.YELLOW + Colors.BOLD + risk_str + Colors.END).ljust(col_widths["risk"] + len(Colors.YELLOW) + len(Colors.BOLD) + len(Colors.END))
+            elif "LOW" in risk_str:
+                r_val = (Colors.GREEN + risk_str + Colors.END).ljust(col_widths["risk"] + len(Colors.GREEN) + len(Colors.END))
+            else:
+                r_val = (Colors.BLUE + risk_str + Colors.END).ljust(col_widths["risk"] + len(Colors.BLUE) + len(Colors.END))
+        else:
+            r_val = truncate(risk_str, col_widths["risk"]).ljust(col_widths["risk"])
+            
+        i_val = truncate(issue_str, col_widths["issue"]).ljust(col_widths["issue"])
+        
+        return f"| {t_val} | {d_val} | {f_val} | {r_val} | {i_val} |"
+
+    border = "+" + "-" * (col_widths["time"] + 2) + "+" + "-" * (col_widths["device"] + 2) + "+" + "-" * (col_widths["file"] + 2) + "+" + "-" * (col_widths["risk"] + 2) + "+" + "-" * (col_widths["issue"] + 2) + "+"
+    
+    print(border)
+    print(format_row("Timestamp", "Device", "File Name", "Risk", "Primary Finding"))
+    print(border)
+    
+    for entry in entries:
+        ts = entry.get("timestamp", "")
+        try:
+            dt = datetime.fromisoformat(ts)
+            ts_formatted = dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            ts_formatted = ts[:16].replace("T", " ")
+            
+        dev = entry.get("device", "")
+        if isinstance(dev, dict):
+            vendor = dev.get("vendor", "").strip()
+            model = dev.get("model", "").strip()
+            if vendor and model:
+                if vendor.lower() in model.lower():
+                    dev_str = model
+                else:
+                    dev_str = f"{vendor} {model}"
+            else:
+                dev_str = model or vendor or "Unknown"
+        else:
+            dev_str = os.path.basename(str(dev))
+            if not dev_str:
+                dev_str = str(dev)
+                
+        filepath = entry.get("file", "")
+        filename = os.path.basename(str(filepath))
+        if not filename:
+            filename = str(filepath)
+            
+        risk = entry.get("risk_level", "CLEAN")
+        
+        findings = entry.get("findings", [])
+        issue_str = ""
+        if findings:
+            issue_str = findings[0].get("issue", "")
+            
+        print(format_row(ts_formatted, dev_str, filename, risk, issue_str, colors=True))
+        
+    print(border)
+    print()
+
+
 # ==========================================
 # DESKTOP / SOUND ALERT SYSTEM
 # ==========================================
@@ -2162,6 +2270,11 @@ def hid_monitor():
 if __name__ == "__main__":
     import sys
     
+    # ── CLI Arguments ─────────────────────────────────────────────────────
+    if len(sys.argv) >= 2 and sys.argv[1] == "--history":
+        show_history()
+        sys.exit(0)
+        
     # ── Quarantine Vault CLI ──────────────────────────────────────────────
     if len(sys.argv) >= 2 and sys.argv[1] == "--quarantine":
         action = sys.argv[2] if len(sys.argv) >= 3 else "list"
