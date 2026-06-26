@@ -215,6 +215,80 @@ def purge_quarantine():
     print(Colors.GREEN + f"[+] Quarantine vault purged. {count} file(s) permanently deleted." + Colors.END)
 
 
+# ==========================================
+# DESKTOP / SOUND ALERT SYSTEM
+# ==========================================
+def _play_tone(frequency=800, duration_ms=300, repeat=1):
+    """Generate and play a tone using aplay (available on all Raspberry Pi OS installations).
+    Runs in a background thread so it never blocks the main scan flow."""
+    def _do_play():
+        try:
+            sample_rate = 8000
+            samples = int(sample_rate * duration_ms / 1000)
+            import wave
+            for _ in range(repeat):
+                buf = io.BytesIO()
+                with wave.open(buf, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(sample_rate)
+                    for i in range(samples):
+                        val = int(32767 * math.sin(2 * math.pi * frequency * i / sample_rate))
+                        wf.writeframes(struct.pack('<h', val))
+                buf.seek(0)
+                proc = subprocess.Popen(
+                    ['aplay', '-q', '-'],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                proc.communicate(input=buf.read(), timeout=5)
+                if repeat > 1:
+                    time.sleep(0.15)
+        except Exception:
+            pass  # Sound is best-effort; never crash the scanner
+    threading.Thread(target=_do_play, daemon=True).start()
+
+
+def _desktop_notify(title, message, urgency="normal", icon="dialog-warning"):
+    """Send a desktop notification via notify-send.
+    Runs as the original user (not root) so it appears on the desktop."""
+    def _do_notify():
+        try:
+            sudo_user = os.environ.get("SUDO_USER")
+            sudo_uid = os.environ.get("SUDO_UID")
+            cmd = ["notify-send", f"--urgency={urgency}", f"--icon={icon}", title, message]
+            env = os.environ.copy()
+            if sudo_user and sudo_uid:
+                cmd = ["sudo", "-u", sudo_user] + cmd
+                env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{sudo_uid}/bus"
+            subprocess.run(cmd, env=env, capture_output=True, timeout=5)
+        except Exception:
+            pass  # Notifications are best-effort
+    threading.Thread(target=_do_notify, daemon=True).start()
+
+
+def alert_threat_detected(device_model, threat_count=0):
+    """Fire alerts when malware or a dangerous device is detected."""
+    _play_tone(frequency=1000, duration_ms=200, repeat=3)  # Urgent triple beep
+    msg = f"Malware detected on {device_model}!" if threat_count else f"Dangerous device blocked: {device_model}"
+    if threat_count:
+        msg += f" ({threat_count} malicious file(s) found)"
+    _desktop_notify("USB THREAT DETECTED", msg, urgency="critical", icon="dialog-error")
+
+
+def alert_device_clean(device_model):
+    """Fire a short success alert when a device passes the scan."""
+    _play_tone(frequency=600, duration_ms=150, repeat=1)  # Short friendly beep
+    _desktop_notify("USB Device Safe", f"{device_model} passed all security checks.", urgency="low", icon="dialog-information")
+
+
+def alert_hid_blocked(device_name):
+    """Fire alerts when an unknown HID keyboard is blocked."""
+    _play_tone(frequency=1200, duration_ms=150, repeat=5)  # Rapid high-pitched alarm
+    _desktop_notify("HID ATTACK BLOCKED", f"Unknown keyboard blocked: {device_name}", urgency="critical", icon="dialog-error")
+
+
 def format_vid_pid(vid, pid):
     """Normalize vendor/product IDs to the whitelist key format."""
     return f"{str(vid).lower()}:{str(pid).lower()}"
@@ -1130,6 +1204,7 @@ def handle_usb_device(device):
         # ── Phase 4: Sanitization prompt ──────────────────────────────────────
         sanitized = False
         if malware_detected and all_malicious_files:
+            alert_threat_detected(usb_info.get('model', 'USB Device'), len(all_malicious_files))
             print("\n" + "=" * 60)
             print(Colors.RED + Colors.BOLD + "  [!] MALICIOUS FILES DETECTED ON THIS DRIVE" + Colors.END)
             print("=" * 60)
@@ -1250,6 +1325,7 @@ def handle_usb_device(device):
             safe_to_use = sanitized or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
             
         if safe_to_use:
+            alert_device_clean(usb_info.get('model', 'USB Device'))
             if not has_storage:
                 print(Colors.GREEN + "[*] Device is CLEAN. No storage to mount." + Colors.END)
             elif sanitized:
@@ -1777,6 +1853,7 @@ def _process_hid_event(event_name, seen_events):
     if device_info.get("has_kbd_handler") and vid_pid not in HID_WHITELIST:
         print(Colors.RED + Colors.BOLD +
               "\n⚡ UNKNOWN KEYBOARD INTERFACE — BLOCKING NOW ⚡" + Colors.END)
+        alert_hid_blocked(device_info.get('name', 'Unknown HID Device'))
         block_hid_device(device_info, event_name)
         already_blocked = True
 
