@@ -1,1 +1,5 @@
-"""Page modules will be added here as UI prompts are implemented."""
+"""Application pages."""
+
+from ui.pages.dashboard import DashboardPage
+
+__all__ = ["DashboardPage"]

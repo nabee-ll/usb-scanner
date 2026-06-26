@@ -97,3 +97,44 @@ QToolTip {
     border-radius: 8px;
     padding: 8px 10px;
 }
+
+QWidget#dashboardPage {
+    background: #f4f7fb;
+}
+
+QLabel#dashboardTitle {
+    font-size: 28px;
+    font-weight: 760;
+    color: #172033;
+}
+
+QLabel#dashboardSubtitle,
+QLabel#dashboardDate,
+QLabel#cardBody,
+QLabel#activityRow {
+    color: #637083;
+}
+
+QLabel#dashboardTime {
+    font-size: 20px;
+    font-weight: 720;
+    color: #172033;
+}
+
+QLabel#cardTitle {
+    font-size: 17px;
+    font-weight: 720;
+    color: #172033;
+}
+
+QLabel#dashboardMetric {
+    font-size: 34px;
+    font-weight: 760;
+    color: #172033;
+}
+
+QLabel#activityRow {
+    padding: 0 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.38);
+}

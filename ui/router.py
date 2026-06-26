@@ -37,11 +37,17 @@ class Router:
         if name not in self._routes:
             raise KeyError(f"Unknown route: {name}")
 
+        current = self._stack.currentWidget()
+        if current is not None and hasattr(current, "on_leave"):
+            current.on_leave()
+
         widget = self._routes[name].factory(**params)
         widget.setProperty("route_name", name)
         self._stack.addWidget(widget)
         self._stack.setCurrentWidget(widget)
         self._history.append(name)
+        if hasattr(widget, "on_enter"):
+            widget.on_enter()
         return widget
 
     def back(self) -> None:
@@ -53,5 +59,10 @@ class Router:
         for index in range(self._stack.count() - 1, -1, -1):
             widget = self._stack.widget(index)
             if widget.property("route_name") == previous_name:
+                current = self._stack.currentWidget()
+                if current is not None and hasattr(current, "on_leave"):
+                    current.on_leave()
                 self._stack.setCurrentWidget(widget)
+                if hasattr(widget, "on_enter"):
+                    widget.on_enter()
                 return

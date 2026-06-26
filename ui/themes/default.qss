@@ -16,3 +16,20 @@ QToolTip {
     border-radius: 8px;
     padding: 8px 10px;
 }
+
+QLabel#dashboardTitle {
+    font-size: 28px;
+    font-weight: 760;
+}
+
+QLabel#dashboardTime,
+QLabel#cardTitle {
+    font-weight: 720;
+}
+
+QLabel#dashboardSubtitle,
+QLabel#dashboardDate,
+QLabel#cardBody,
+QLabel#activityRow {
+    color: #637083;
+}

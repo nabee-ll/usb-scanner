@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QMainWindow, QStackedWidget
 
 from core.context import AppContext
+from ui.pages import DashboardPage
 
 
 class MainWindow(QMainWindow):
@@ -19,3 +20,5 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(context.settings.min_width, context.settings.min_height)
         self.setCentralWidget(self.stack)
         context.router.attach_stack(self.stack)
+        context.router.register("dashboard", lambda: DashboardPage(context))
+        context.router.navigate("dashboard")
