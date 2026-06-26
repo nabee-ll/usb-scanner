@@ -49,6 +49,7 @@ HID_RISK_CACHE = {}
 WHITELIST_FILE = os.path.join(os.path.dirname(__file__), "whitelist.json")
 QUARANTINE_DIR = os.path.join(os.path.dirname(__file__), "quarantine")
 QUARANTINE_LOG = os.path.join(QUARANTINE_DIR, "quarantine_log.json")
+EMAIL_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "email_config.json")
 
 def _fix_file_ownership(filepath):
     """If running as sudo, change file ownership to the original user."""
@@ -343,6 +344,65 @@ def _desktop_notify(title, message, urgency="normal", icon="dialog-warning"):
     threading.Thread(target=_do_notify, daemon=True).start()
 
 
+def init_email_config():
+    """Ensure the email configuration file exists on startup."""
+    if not os.path.exists(EMAIL_CONFIG_FILE):
+        template = {
+            "enabled": False,
+            "smtp_server": "smtp.gmail.com",
+            "smtp_port": 587,
+            "sender_email": "your_email@gmail.com",
+            "sender_password": "your_app_password",
+            "receiver_email": "admin_email@gmail.com"
+        }
+        try:
+            with open(EMAIL_CONFIG_FILE, "w") as f:
+                json.dump(template, f, indent=4)
+            _fix_file_ownership(EMAIL_CONFIG_FILE)
+        except Exception:
+            pass
+
+def send_email_alert(subject, body):
+    """Send an email alert using SMTP if configured. Runs in a background thread."""
+    def _do_send():
+        if not os.path.exists(EMAIL_CONFIG_FILE):
+            return
+
+        try:
+            with open(EMAIL_CONFIG_FILE, "r") as f:
+                config = json.load(f)
+        except Exception:
+            return
+
+        if not config.get("enabled"):
+            return
+
+        try:
+            import smtplib
+            from email.message import EmailMessage
+
+            msg = EmailMessage()
+            msg.set_content(body)
+            msg['Subject'] = subject
+            msg['From'] = config['sender_email']
+            msg['To'] = config['receiver_email']
+
+            # Use SMTP_SSL for port 465, or starttls for port 587
+            if config.get("smtp_port") == 465:
+                server = smtplib.SMTP_SSL(config['smtp_server'], config['smtp_port'], timeout=10)
+            else:
+                server = smtplib.SMTP(config['smtp_server'], config['smtp_port'], timeout=10)
+                server.starttls()
+                
+            server.login(config['sender_email'], config['sender_password'])
+            server.send_message(msg)
+            server.quit()
+        except Exception as e:
+            print(f"\n[!] Failed to send email alert: {e}")
+
+    threading.Thread(target=_do_send, daemon=True).start()
+
+
 def alert_threat_detected(device_model, threat_count=0):
     """Fire alerts when malware or a dangerous device is detected."""
     _play_tone(frequency=1000, duration_ms=200, repeat=3)  # Urgent triple beep
@@ -350,6 +410,7 @@ def alert_threat_detected(device_model, threat_count=0):
     if threat_count:
         msg += f" ({threat_count} malicious file(s) found)"
     _desktop_notify("USB THREAT DETECTED", msg, urgency="critical", icon="dialog-error")
+    send_email_alert("CRITICAL: USB Threat Detected", f"The USB Scanner intercepted a threat.\n\nDetails: {msg}\nTime: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 def alert_device_clean(device_model):
@@ -361,7 +422,9 @@ def alert_device_clean(device_model):
 def alert_hid_blocked(device_name):
     """Fire alerts when an unknown HID keyboard is blocked."""
     _play_tone(frequency=1200, duration_ms=150, repeat=5)  # Rapid high-pitched alarm
-    _desktop_notify("HID ATTACK BLOCKED", f"Unknown keyboard blocked: {device_name}", urgency="critical", icon="dialog-error")
+    msg = f"Unknown keyboard blocked: {device_name}"
+    _desktop_notify("HID ATTACK BLOCKED", msg, urgency="critical", icon="dialog-error")
+    send_email_alert("CRITICAL: HID Attack Blocked", f"The USB Scanner intercepted an unknown keyboard interface (potential Rubber Ducky).\n\nDetails: {msg}\nTime: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 def format_vid_pid(vid, pid):
@@ -2074,7 +2137,14 @@ if __name__ == "__main__":
         sys.exit(0)
     
     # ── Normal USB monitoring mode ────────────────────────────────────────
-    db_path = ensure_database()
+    # Ensure required directories exist
+    os.makedirs(QUARANTINE_DIR, exist_ok=True)
+    _fix_file_ownership(QUARANTINE_DIR)
+    
+    # Initialize components
+    load_whitelist()
+    init_email_config()
+    
     print(Colors.GREEN + f"[*] Malware database: {db_path}" + Colors.END)
     print(Colors.GREEN + f"[*] HID whitelist: {len(HID_WHITELIST)} trusted device(s)" + Colors.END)
     

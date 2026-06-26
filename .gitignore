@@ -22,3 +22,5 @@ scan_log.json
 
 # Temporary test scripts
 test_pdf.py
+# Email configuration
+email_config.json
