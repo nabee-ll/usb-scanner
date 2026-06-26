@@ -52,15 +52,24 @@ QUARANTINE_LOG = os.path.join(QUARANTINE_DIR, "quarantine_log.json")
 
 def load_whitelist():
     global HID_WHITELIST
-    # Reset to base hardcoded whitelist
-    HID_WHITELIST = {
-        "413c:2113": "Dell KB216 Wired Keyboard",
-        "413c:3020": "Dell KB216 Wired Keyboard (alt)",
-        "0461:4d15": "Primax Electronics Keyboard",
-        "046d:c534": "Logitech USB Receiver",
-        "093a:2510": "PixArt Optical USB Mouse",
-        "1c4f:0034": "SIGMACHIP USB Mouse",
-    }
+    HID_WHITELIST = {}
+    
+    if not os.path.exists(WHITELIST_FILE):
+        # Create default whitelist.json if it doesn't exist
+        default_whitelist = {
+            "413c:2113": "Dell KB216 Wired Keyboard",
+            "413c:3020": "Dell KB216 Wired Keyboard (alt)",
+            "0461:4d15": "Primax Electronics Keyboard",
+            "046d:c534": "Logitech USB Receiver",
+            "093a:2510": "PixArt Optical USB Mouse",
+            "1c4f:0034": "SIGMACHIP USB Mouse",
+        }
+        try:
+            with open(WHITELIST_FILE, "w") as f:
+                json.dump(default_whitelist, f, indent=4)
+        except Exception:
+            pass
+
     if os.path.exists(WHITELIST_FILE):
         try:
             with open(WHITELIST_FILE, "r") as f:
