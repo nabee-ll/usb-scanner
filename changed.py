@@ -279,20 +279,19 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                         tmp_wav = "/tmp/_usb_scanner_alert.wav"
                         with open(tmp_wav, "wb") as f:
                             f.write(wav_data)
-                        os.chmod(tmp_wav, 0o644)  # Ensure user can read it
+                        os.chmod(tmp_wav, 0o644)
                         
                         if sudo_user:
-                            # Use su - to spawn a full login shell for the user.
-                            # This correctly sets up all audio environment variables (PipeWire, XDG_RUNTIME_DIR, DBUS).
                             cmd = ["su", "-", sudo_user, "-c", f"paplay {tmp_wav}"]
                         else:
                             cmd = ["paplay", tmp_wav]
                             
                         result = subprocess.run(cmd, capture_output=True, timeout=5)
+                        print(f"[DEBUG AUDIO] paplay returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
                         if result.returncode == 0:
                             played = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[DEBUG AUDIO] paplay exception: {e}")
                 
                 # Method 2: aplay using the user's environment
                 if not played and shutil.which("aplay"):
@@ -308,13 +307,15 @@ def _play_tone(frequency=800, duration_ms=300, repeat=1):
                             cmd = ["aplay", "-q", tmp_wav]
                             
                         result = subprocess.run(cmd, capture_output=True, timeout=5)
+                        print(f"[DEBUG AUDIO] aplay returncode={result.returncode} stderr={result.stderr.decode(errors='replace').strip()}")
                         if result.returncode == 0:
                             played = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[DEBUG AUDIO] aplay exception: {e}")
                 
                 # Method 3: Terminal bell (always works)
                 if not played:
+                    print("[DEBUG AUDIO] All methods failed, using terminal bell")
                     print("\a", end="", flush=True)
                 
                 if repeat > 1:
