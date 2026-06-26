@@ -16,11 +16,14 @@ test_malware.db
 # Generated reports & logs
 reports/
 scan_log.json
+whitelist.json
+
 
 # IDEs and Editors
 .vscode/
 
 # Temporary test scripts
 test_pdf.py
+
 # Email configuration
 email_config.json
