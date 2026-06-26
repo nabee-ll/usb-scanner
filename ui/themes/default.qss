@@ -1,10 +1,18 @@
 QWidget {
     font-family: "Inter", "Segoe UI", sans-serif;
     font-size: 14px;
-    color: #1b1f24;
-    background: #f7f8fa;
+    color: #172033;
+    background: #f4f7fb;
 }
 
 QMainWindow {
-    background: #f7f8fa;
+    background: #f4f7fb;
+}
+
+QToolTip {
+    color: #172033;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.86);
+    border-radius: 8px;
+    padding: 8px 10px;
 }

@@ -14,7 +14,7 @@ class AppSettings:
     """Central settings shared by UI and backend layers."""
 
     app_name: str = "USB Scanner"
-    theme: str = "default"
+    theme: str = "light"
     database_path: Path = PROJECT_ROOT / "malware_hashes.db"
     assets_dir: Path = PROJECT_ROOT / "ui" / "assets"
     icons_dir: Path = PROJECT_ROOT / "ui" / "icons"

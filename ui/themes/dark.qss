@@ -1,0 +1,99 @@
+QWidget {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    font-size: 14px;
+    color: #f2f6ff;
+    background: #101319;
+    selection-background-color: #5eb1ff;
+}
+
+QMainWindow {
+    background: #101319;
+}
+
+QLabel {
+    background: transparent;
+}
+
+QFrame#glassCard,
+QWidget#glassCard,
+QDialog#modalDialog,
+QWidget#bottomNavigation {
+    background: rgba(34, 39, 50, 0.68);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 20px;
+}
+
+QPushButton {
+    min-height: 48px;
+    border-radius: 14px;
+    padding: 0 18px;
+    font-weight: 650;
+}
+
+QPushButton#primaryButton {
+    color: #07101c;
+    background: #5eb1ff;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+QPushButton#primaryButton:hover {
+    background: #8fc8ff;
+}
+
+QPushButton#secondaryButton,
+QPushButton#navigationButton {
+    color: #f2f6ff;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+QPushButton#secondaryButton:hover,
+QPushButton#navigationButton:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+QPushButton#dangerButton {
+    color: #07101c;
+    background: #ff6961;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+QPushButton#dangerButton:hover {
+    background: #ff837d;
+}
+
+QProgressBar#glassProgressBar {
+    min-height: 14px;
+    max-height: 14px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    text-align: center;
+}
+
+QProgressBar#glassProgressBar::chunk {
+    border-radius: 7px;
+    background: #5eb1ff;
+}
+
+QLabel#statusChip {
+    min-height: 32px;
+    border-radius: 16px;
+    padding: 0 12px;
+    font-weight: 650;
+}
+
+QFrame#notificationToast {
+    background: rgba(242, 246, 255, 0.88);
+    color: #101319;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 16px;
+}
+
+QToolTip {
+    color: #f2f6ff;
+    background: rgba(34, 39, 50, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
