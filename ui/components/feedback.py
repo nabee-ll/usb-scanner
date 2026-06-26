@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QLabel,
     QProgressBar,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -46,6 +47,7 @@ class StatusChip(QLabel):
         self.setObjectName("statusChip")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumHeight(32)
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.set_status(status)
 
     def set_status(self, status: str) -> None:
@@ -62,7 +64,7 @@ class RiskMeter(QWidget):
     def __init__(self, value: int = 0, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._value = max(0, min(100, value))
-        self.setMinimumSize(128, 128)
+        self.setMinimumSize(104, 104)
 
     def set_value(self, value: int) -> None:
         self._value = max(0, min(100, value))

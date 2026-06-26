@@ -18,9 +18,9 @@ QFrame#glassCard,
 QWidget#glassCard,
 QDialog#modalDialog,
 QWidget#bottomNavigation {
-    background: rgba(255, 255, 255, 0.66);
-    border: 1px solid rgba(255, 255, 255, 0.86);
-    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(205, 217, 232, 0.86);
+    border-radius: 16px;
 }
 
 QPushButton {
@@ -140,15 +140,12 @@ QLabel#activityRow {
 }
 
 QWidget#scanPage,
-QWidget#scanContent,
-QScrollArea#scanScrollArea,
-QScrollArea#scanScrollArea > QWidget,
-QScrollArea#scanScrollArea > QWidget > QWidget {
+QWidget#scanContent {
     background: #f4f7fb;
 }
 
 QLabel#scanTitle {
-    font-size: 30px;
+    font-size: 24px;
     font-weight: 780;
     color: #172033;
 }
@@ -160,18 +157,22 @@ QLabel#scanLogRow {
 }
 
 QLabel#scanMetric {
-    font-size: 34px;
+    font-size: 28px;
     font-weight: 760;
     color: #0a84ff;
 }
 
 QWidget#scanInfoRow,
 QLabel#scanLogRow {
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.38);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.46);
 }
 
 QLabel#scanInfoValue {
     color: #172033;
     font-weight: 680;
+}
+
+QWidget#animatedDeviceViewer {
+    background: transparent;
 }

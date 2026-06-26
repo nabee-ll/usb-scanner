@@ -7,8 +7,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QFrame,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -39,54 +37,44 @@ class ScanPage(BaseWidget):
         self.setObjectName("scanPage")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        page_layout = QVBoxLayout(self)
-        page_layout.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea(self)
-        scroll.setObjectName("scanScrollArea")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-
-        content = QWidget(scroll)
-        content.setObjectName("scanContent")
-        root = QVBoxLayout(content)
-        root.setContentsMargins(28, 24, 28, 28)
-        root.setSpacing(20)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 18, 22, 18)
+        root.setSpacing(12)
 
         root.addLayout(self._build_header())
         root.addWidget(AnimatedDeviceViewer(self))
-        root.addWidget(self._build_progress_section())
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(18)
-        grid.setVerticalSpacing(18)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
         grid.addWidget(self._build_device_info_card(), 0, 0)
-        grid.addWidget(self._build_file_statistics_card(), 0, 1)
-        grid.addWidget(self._build_threat_detection_card(), 0, 2)
-        grid.addWidget(self._build_live_logs_card(), 1, 0, 1, 2)
-        grid.addWidget(self._build_recommendation_card(), 1, 2)
+        grid.addWidget(self._build_progress_section(), 0, 1)
+        grid.addWidget(self._build_threat_detection_card(), 0, 2, 2, 1)
+        grid.addWidget(self._build_file_statistics_card(), 1, 0)
+        grid.addWidget(self._build_live_logs_card(), 1, 1)
+        grid.addWidget(self._build_recommendation_card(), 2, 0, 1, 2)
+        grid.addWidget(self._build_action_row(), 2, 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(2, 1)
-        root.addLayout(grid)
-        root.addWidget(self._build_action_row())
-
-        scroll.setWidget(content)
-        page_layout.addWidget(scroll)
+        grid.setRowStretch(0, 1)
+        grid.setRowStretch(1, 1)
+        grid.setRowStretch(2, 0)
+        root.addLayout(grid, stretch=1)
 
     def on_enter(self) -> None:
         self._animate_intro()
 
     def _build_header(self) -> QHBoxLayout:
         header = QHBoxLayout()
-        header.setSpacing(16)
+        header.setSpacing(12)
 
         title_group = QVBoxLayout()
         title_group.setSpacing(2)
 
         title = QLabel("Scan Device", self)
         title.setObjectName("scanTitle")
-        subtitle = QLabel("Inspect files, risk signals, and recommendations in one view.", self)
+        subtitle = QLabel("Inspect USB files, risk, and next actions.", self)
         subtitle.setObjectName("scanSubtitle")
         subtitle.setWordWrap(True)
 
@@ -99,8 +87,9 @@ class ScanPage(BaseWidget):
 
     def _build_progress_section(self) -> GlassCard:
         card = GlassCard(self)
+        card.layout.setSpacing(10)
         top = QHBoxLayout()
-        top.setSpacing(16)
+        top.setSpacing(12)
 
         title_group = QVBoxLayout()
         title_group.setSpacing(4)
@@ -151,9 +140,10 @@ class ScanPage(BaseWidget):
     def _build_threat_detection_card(self) -> GlassCard:
         card = self._card("Threat Detection")
         meter = RiskMeter(0, self)
+        meter.setMaximumSize(118, 118)
         card.layout.addWidget(meter)
         card.layout.addWidget(StatusChip("No threats detected", "success", self))
-        card.layout.addWidget(self._body("Threat results will update during a scan."))
+        card.layout.addWidget(self._body("Threat results will update here."))
         return card
 
     def _build_live_logs_card(self) -> GlassCard:
@@ -162,7 +152,6 @@ class ScanPage(BaseWidget):
             "Scanner initialized",
             "Waiting for scan request",
             "No files queued",
-            "Threat engine idle",
         ]
         for line in logs:
             card.layout.addWidget(self._log_row(line))
@@ -173,14 +162,15 @@ class ScanPage(BaseWidget):
         card = self._card("Recommendation Card")
         card.layout.addWidget(StatusChip("Recommended", "neutral", self))
         card.layout.addWidget(
-            self._body("Connect a trusted USB device and run a scan before opening files.")
+            self._body("Run a scan before opening files from unknown devices.")
         )
         return card
 
     def _build_action_row(self) -> GlassCard:
         card = GlassCard(self)
-        actions = QHBoxLayout()
-        actions.setSpacing(12)
+        card.layout.setSpacing(10)
+        actions = QVBoxLayout()
+        actions.setSpacing(8)
         actions.addWidget(SecondaryButton("Export Report", self))
         actions.addWidget(DangerButton("Quarantine", self))
         actions.addWidget(PrimaryButton("Scan Again", self))
@@ -190,6 +180,8 @@ class ScanPage(BaseWidget):
     def _card(self, title: str) -> GlassCard:
         card = GlassCard(self)
         card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        card.layout.setContentsMargins(16, 14, 16, 14)
+        card.layout.setSpacing(8)
         label = QLabel(title, self)
         label.setObjectName("cardTitle")
         card.layout.addWidget(label)
@@ -199,7 +191,7 @@ class ScanPage(BaseWidget):
         row = QWidget(self)
         row.setObjectName("scanInfoRow")
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(10)
 
         name = QLabel(label, row)
@@ -216,7 +208,7 @@ class ScanPage(BaseWidget):
     def _log_row(self, text: str) -> QLabel:
         label = QLabel(text, self)
         label.setObjectName("scanLogRow")
-        label.setMinimumHeight(34)
+        label.setMinimumHeight(28)
         return label
 
     def _body(self, text: str) -> QLabel:

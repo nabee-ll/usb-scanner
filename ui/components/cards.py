@@ -19,4 +19,4 @@ class GlassCard(QFrame):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(14)
-        add_shadow(self)
+        add_shadow(self, blur_radius=16, y_offset=5)
