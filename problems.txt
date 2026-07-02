@@ -18,43 +18,47 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
     Other / Unknown
 
 [ EVENT ] USB Device Detected - Analyzing...
-/home/raspberrypi/usb-scanner/changed.py:1710: DeprecationWarning: Will be removed in 1.0. Access properties with Device.properties.
+/home/raspberrypi/usb-scanner/changed.py:1704: DeprecationWarning: Will be removed in 1.0. Access properties with Device.properties.
   if parent and parent.device_path == device.device_path:
-[*] Found partition: /dev/sdb
+[*] Found partition: /dev/sdc
 [*] USB auto-mounted at /media/raspberrypi/DAB7-E812; unmounting before safety scan.
-[+] Quarantine-mounted read-only at /tmp/usb_scanner_quarantine/sdb
-[+] Scanning from /tmp/usb_scanner_quarantine/sdb
+[+] Quarantine-mounted read-only at /tmp/usb_scanner_quarantine/sdc
+[+] Scanning from /tmp/usb_scanner_quarantine/sdc
 
 [ SCANNING ] High-Speed Threaded FS Analysis...
 
-
-[*] HIGH RISK FILE: /tmp/usb_scanner_quarantine/sdb/yara_test.txt
-  -> DB MALWARE DETECTED: EICAR-Test-File (Risk: 15)
-  -> ClamAV MALWARE DETECTED: Eicar-Test-Signature (Risk: 15)
-[!] Device is NOT SAFE. Keeping storage unavailable.                            
-    Reason: declared type 'storage' does not match detected type 'other'
-    Storage Hash: 2d93b0732a446f316f6ce5f42bcf9507304da3e85185d01face8bd715ba84291
-[!] Device rejected. /dev/sdb is not mounted for user access.
-  [✓] Deauthorized USB port 1-1.4; device blocked.
-
+                                                                                
 ============================================================
-        DEVICE TYPE MISMATCH REPORT        
+        COMPLETE USB DEVICE SECURITY REPORT        
 ============================================================
-  Time           : 2026-07-02 13:34:29.116805
+  Time           : 2026-07-02 13:55:06.679881
   Vendor         : USB
   Model          : SanDisk_3.2Gen1
   VID:PID        : 0781:5591
   Serial         : 0401b21bf79486416e44a7ed556860e46643b869f41ff07b089f79af8328ec66c47200000000000000000000b02f452c001390189155810724b21b40
   USB Class      : Unknown
+  USB Driver     : Unknown
+------------------------------------------------------------
+  Hardware Risk  : 0
+  Storage Risk   : 0
+  HID Risk       : 0
+  Policy Risk    : 0
+  Total Risk     : 0
+  Threat Level   : CLEAN
   Declared Type  : storage
-  Detected Type  : other
-  Policy Risk    : 15
-  Total Risk     : 45
-  Threat Level   : HIGH
-  Status         : BLOCKED - Type mismatch
-  Flags / Findings:
-    - DEVICE TYPE MISMATCH: user declared 'storage' but detected 'other'
+  Detected Type  : storage
+
+  Scanned Paths:
+    - /tmp/usb_scanner_quarantine/sdc
 ============================================================
 
-[+] PDF Report Generated: /home/raspberrypi/usb-scanner/reports/scan_report_0781_5591_20260702_133429.pdf
+[+] PDF Report Generated: /home/raspberrypi/usb-scanner/reports/scan_report_0781_5591_20260702_135506.pdf
+[*] Device is CLEAN. Accepting device for user access...
+
+  [*] Trust this storage device for future fingerprint checks? (y/n): [DEBUG AUDIO] paplay (auto env) returncode=0 stderr=
+y
+  [+] Storage device 0781:5591 stored with serial and fingerprint.
+
+[✓] Device accepted and mounted for user access at /media/raspberrypi/DAB7-E812
+  [✓] Authorized USB port 1-1.4 for use.
 [OK] Device analysis complete. Ready for next device...
