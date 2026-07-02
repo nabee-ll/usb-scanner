@@ -1679,12 +1679,6 @@ def handle_usb_device(device):
         hid_data = HID_RISK_CACHE.get(vid_pid, {"risk": 0, "flags": []})
         hid_risk = hid_data["risk"]
         flags.extend(hid_data["flags"])
-        type_mismatch = declared_device_type != detected_device_type
-        policy_risk = 15 if type_mismatch else 0
-        if type_mismatch:
-            flags.append(
-                f"DEVICE TYPE MISMATCH: user declared '{declared_device_type}' but detected '{detected_device_type}'"
-            )
         
         # ── Phase 2: Storage scan ─────────────────────────────────────────────
         storage_risk = 0
@@ -1778,10 +1772,20 @@ def handle_usb_device(device):
         if not has_storage:
             flags.append("No block storage or MTP/PTP file-transfer interface found")
 
+        if has_storage:
+            detected_device_type = "storage"
+
+        type_mismatch = declared_device_type != detected_device_type
+        policy_risk = 15 if type_mismatch else 0
+        if type_mismatch:
+            flags.append(
+                f"DEVICE TYPE MISMATCH: user declared '{declared_device_type}' but detected '{detected_device_type}'"
+            )
+
         # ── Phase 3: Save ORIGINAL scan results (before any user intervention) ──
         original_storage_risk = storage_risk
         original_malware_detected = malware_detected
-        original_total_risk = base_risk + storage_risk + hid_risk
+        original_total_risk = base_risk + storage_risk + hid_risk + policy_risk
 
         trusted_storage = False
         storage_trust_invalidated = False
@@ -1827,8 +1831,8 @@ def handle_usb_device(device):
             print(f"  Declared Type  : {declared_device_type}")
             print(f"  Detected Type  : {detected_device_type}")
             print(f"  Policy Risk    : {policy_risk}")
-            print(f"  Total Risk     : {original_total_risk + policy_risk}")
-            print(f"  Threat Level   : {threat_level(original_total_risk + policy_risk)}")
+            print(f"  Total Risk     : {original_total_risk}")
+            print(f"  Threat Level   : {threat_level(original_total_risk)}")
             print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Type mismatch" + Colors.END)
             if flags:
                 print("  Flags / Findings:")
@@ -1842,7 +1846,7 @@ def handle_usb_device(device):
                 original_storage_risk,
                 hid_risk,
                 policy_risk,
-                original_total_risk + policy_risk,
+                original_total_risk,
                 original_malware_detected,
                 flags,
                 sanitized=False,
