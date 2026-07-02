@@ -19,6 +19,9 @@ import warnings
 import shutil
 from datetime import datetime
 import subprocess
+import sys
+import tty
+import termios
 
 try:
     from fpdf import FPDF
@@ -1233,19 +1236,74 @@ def normalize_device_type(value):
             return canonical
     return normalized
 
-def prompt_declared_device_type(usb_info):
-    """Ask the user what kind of device they inserted."""
+DEVICE_TYPE_OPTIONS = [
+    ("storage", "Storage / USB Drive"),
+    ("scanner", "Scanner"),
+    ("keyboard", "Keyboard"),
+    ("mouse", "Mouse"),
+    ("phone", "Phone / MTP / PTP"),
+    ("printer", "Printer"),
+    ("camera", "Camera"),
+    ("hub", "Hub / Adapter"),
+    ("other", "Other / Unknown"),
+]
+
+def _read_menu_key():
+    """Read a single key from the terminal, including arrow keys."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch1 = sys.stdin.read(1)
+        if ch1 == "\x1b":
+            ch2 = sys.stdin.read(1)
+            ch3 = sys.stdin.read(1)
+            return ch1 + ch2 + ch3
+        return ch1
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+def _render_device_type_menu(selected_index, usb_info):
+    os.system("clear")
     print(Colors.CYAN + "\n[ DEVICE TYPE CHECK ]" + Colors.END)
     print(f"  Vendor : {usb_info['vendor']}")
     print(f"  Model  : {usb_info['model']}")
     print(f"  VID:PID: {usb_info['vid']}:{usb_info['pid']}")
-    print("  Enter the device type as you know it (storage/scanner/keyboard/mouse/phone/printer/camera/other).")
+    print()
+    print(Colors.BOLD + "  Use ↑ / ↓ to choose the device type, then press Enter." + Colors.END)
+    print()
+
+    for index, (_, label) in enumerate(DEVICE_TYPE_OPTIONS):
+        prefix = "➜" if index == selected_index else " "
+        if index == selected_index:
+            print(Colors.YELLOW + Colors.BOLD + f"  {prefix} {label}" + Colors.END)
+        else:
+            print(f"  {prefix} {label}")
+
+def prompt_declared_device_type(usb_info):
+    """Ask the user to pick the inserted device type using arrow keys."""
+    selected_index = 0
+
+    if not sys.stdin.isatty():
+        print(Colors.CYAN + "\n[ DEVICE TYPE CHECK ]" + Colors.END)
+        print(f"  Vendor : {usb_info['vendor']}")
+        print(f"  Model  : {usb_info['model']}")
+        print(f"  VID:PID: {usb_info['vid']}:{usb_info['pid']}")
+        declared = input(Colors.YELLOW + "  What device are you inserting? " + Colors.END).strip()
+        return normalize_device_type(declared)
 
     while True:
-        declared = input(Colors.YELLOW + "  What device are you inserting? " + Colors.END).strip()
-        declared_type = normalize_device_type(declared)
-        if declared_type:
-            return declared_type
+        _render_device_type_menu(selected_index, usb_info)
+        key = _read_menu_key()
+
+        if key == "\x1b[A":
+            selected_index = (selected_index - 1) % len(DEVICE_TYPE_OPTIONS)
+        elif key == "\x1b[B":
+            selected_index = (selected_index + 1) % len(DEVICE_TYPE_OPTIONS)
+        elif key in ("\r", "\n"):
+            return DEVICE_TYPE_OPTIONS[selected_index][0]
+        elif key in ("q", "Q"):
+            return DEVICE_TYPE_OPTIONS[-1][0]
 
 def detect_actual_device_type(device, usb_info):
     """Infer the device type from udev metadata and mountability."""
@@ -1518,68 +1576,6 @@ def handle_usb_device(device):
 
         declared_device_type = prompt_declared_device_type(usb_info)
         detected_device_type = detect_actual_device_type(device, usb_info)
-        type_match = declared_device_type == detected_device_type
-
-        if not type_match:
-            mismatch_reason = (
-                f"DEVICE TYPE MISMATCH: user declared '{declared_device_type}' "
-                f"but detected '{detected_device_type}'"
-            )
-            print(Colors.RED + Colors.BOLD + "\n[!] Device rejected: type mismatch detected." + Colors.END)
-            print(Colors.RED + f"    Declared: {declared_device_type} | Detected: {detected_device_type}" + Colors.END)
-
-            base_risk, flags = structural_rules(usb_info)
-            flags.append(mismatch_reason)
-            policy_risk = 15
-            total_risk = base_risk + policy_risk
-
-            print("\n" + "=" * 60)
-            print(Colors.BOLD + Colors.CYAN + "        DEVICE TYPE MISMATCH REPORT        " + Colors.END)
-            print("=" * 60)
-            print(f"  Time           : {datetime.now()}")
-            print(f"  Vendor         : {usb_info['vendor']}")
-            print(f"  Model          : {usb_info['model']}")
-            print(f"  VID:PID        : {vid_pid}")
-            print(f"  Serial         : {usb_info['serial']}")
-            print(f"  USB Class      : {usb_info['usb_class']}")
-            print(f"  Declared Type   : {declared_device_type}")
-            print(f"  Detected Type   : {detected_device_type}")
-            print(f"  Policy Risk     : {policy_risk}")
-            print(f"  Total Risk      : {total_risk}")
-            print(f"  Threat Level    : {threat_level(total_risk)}")
-            print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Type mismatch" + Colors.END)
-            print("  Flags / Findings:")
-            for f in flags:
-                print(f"    - {f}")
-            print("=" * 60 + "\n")
-
-            log_device_decision(
-                usb_info,
-                declared_device_type,
-                detected_device_type,
-                "BLOCKED",
-                mismatch_reason,
-                risk_score=policy_risk,
-            )
-
-            generate_pdf_report(
-                usb_info,
-                base_risk,
-                0,
-                0,
-                policy_risk,
-                total_risk,
-                False,
-                flags,
-                sanitized=False,
-                declared_device_type=declared_device_type,
-                detected_device_type=detected_device_type,
-            )
-
-            usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
-            if usb_port:
-                deauthorize_usb_device(usb_port)
-            return
 
         # Whitelisted keyboard/mouse — skip full report (check before 3s wait)
         if vid_pid in HID_WHITELIST and not usb_device_has_storage(device):
@@ -1595,7 +1591,12 @@ def handle_usb_device(device):
         hid_data = HID_RISK_CACHE.get(vid_pid, {"risk": 0, "flags": []})
         hid_risk = hid_data["risk"]
         flags.extend(hid_data["flags"])
-        policy_risk = 0
+        type_mismatch = declared_device_type != detected_device_type
+        policy_risk = 15 if type_mismatch else 0
+        if type_mismatch:
+            flags.append(
+                f"DEVICE TYPE MISMATCH: user declared '{declared_device_type}' but detected '{detected_device_type}'"
+            )
         
         # ── Phase 2: Storage scan ─────────────────────────────────────────────
         storage_risk = 0
@@ -1765,7 +1766,9 @@ def handle_usb_device(device):
         print(f"  Threat Level   : {threat_level(total_risk)}")
         print(f"  Declared Type  : {declared_device_type}")
         print(f"  Detected Type  : {detected_device_type}")
-        if sanitized:
+        if type_mismatch:
+            print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Type mismatch" + Colors.END)
+        elif sanitized:
             print(Colors.GREEN + Colors.BOLD + "  Status         : SANITIZED - Drive cleaned and allowed" + Colors.END)
         elif malware_detected:
             print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Malware detected" + Colors.END)
@@ -1801,6 +1804,32 @@ def handle_usb_device(device):
         # ── Phase 8: Device access decision ───────────────────────────────────
         # A sanitized device is safe. A clean-scanned device is safe.
         # Everything else stays blocked.
+        if type_mismatch:
+            reason_str = (
+                f"declared type '{declared_device_type}' does not match detected type '{detected_device_type}'"
+            )
+            print(Colors.RED + f"[!] Device is NOT SAFE. Keeping storage unavailable." + Colors.END)
+            print(Colors.RED + f"    Reason: {reason_str}" + Colors.END)
+            for item in scanned_storage:
+                keep_storage_blocked(
+                    item["device_node"],
+                    item["mount_path"],
+                    item["quarantine_mount"],
+                )
+            usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
+            if usb_port:
+                deauthorize_usb_device(usb_port)
+            log_device_decision(
+                usb_info,
+                declared_device_type,
+                detected_device_type,
+                "BLOCKED",
+                reason_str,
+                risk_score=policy_risk,
+            )
+            print(Colors.GREEN + "[OK] Device analysis complete. Ready for next device..." + Colors.END)
+            return
+
         if not has_storage:
             # For pure HID devices (mice/keyboards), allow them if there's no active HID attack.
             # A base_risk of 1 or 2 (e.g., missing serial number) is common for cheap generic mice and shouldn't cause a strict block.
@@ -1863,6 +1892,16 @@ def handle_usb_device(device):
             usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
             if usb_port:
                 deauthorize_usb_device(usb_port)
+
+        if not type_mismatch:
+            log_device_decision(
+                usb_info,
+                declared_device_type,
+                detected_device_type,
+                "ALLOWED" if safe_to_use else "BLOCKED",
+                "scan completed",
+                risk_score=policy_risk,
+            )
 
         print(Colors.GREEN + "[OK] Device analysis complete. Ready for next device..." + Colors.END)
     except Exception as e:
