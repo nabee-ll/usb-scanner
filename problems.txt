@@ -1,0 +1,10 @@
+raspberrypi@raspberrypi:~/usb-scanner $ sudo ./run.sh 
+[+] Database ready: /home/raspberrypi/usb-scanner/malware_hashes.db
+[*] Starting USB Security Engine (Ctrl+C to stop)...
+[*] For storage accept/block enforcement and HID blocking, run with sudo: sudo ./run.sh
+
+Traceback (most recent call last):
+  File "/home/raspberrypi/usb-scanner/changed.py", line 28, in <module>
+    from db_init import DB_NAME, ensure_database
+ImportError: cannot import name 'DB_NAME' from 'db_init' (/home/raspberrypi/usb-scanner/db_init.py)
+raspberrypi@raspberrypi:~/usb-scanner $ 
