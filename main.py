@@ -14,6 +14,6 @@ def main() -> int:
 	monitor_usb(services.scan_service)
 	return 0
 
-
+//nothing
 if __name__ == "__main__":
 	raise SystemExit(main())
