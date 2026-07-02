@@ -1,7 +1,6 @@
 printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > yara_test.txt
 
 
-
 [ DEVICE TYPE CHECK ]
   Vendor : USB
   Model  : SanDisk_3.2Gen1
@@ -19,21 +18,36 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
     Hub / Adapter
     Other / Unknown
 
-[ EVENT ] Whitelisted device connected: USB SanDisk_3.2Gen1
+[ EVENT ] USB Device Detected - Analyzing...
+/home/raspberrypi/usb-scanner/changed.py:1710: DeprecationWarning: Will be removed in 1.0. Access properties with Device.properties.
+  if parent and parent.device_path == device.device_path:
+[*] Found partition: /dev/sda
+[*] USB auto-mounted at /media/raspberrypi/DAB7-E812; unmounting before safety scan.
+[+] Quarantine-mounted read-only at /tmp/usb_scanner_quarantine/sda
+[+] Scanning from /tmp/usb_scanner_quarantine/sda
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        WHITELISTED HID DEVICE — TRUSTED        
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Time           : 2026-07-02 12:55:54.461589
- Device         : USB SanDisk_3.2Gen1
- VID:PID        : 0781:5591
- Vendor         : USB
- Model          : SanDisk_3.2Gen1
+[ SCANNING ] High-Speed Threaded FS Analysis...
 
-✓ Device is WHITELISTED — no storage to scan, will not be blocked
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[✓] Device analysis complete. Ready for next device...
-^C
-[!] Stopping USB Security Engine...
-[✓] Shutdown complete. Goodbye.
+[*] HIGH RISK FILE: /tmp/usb_scanner_quarantine/sda/yara_test.txt
+  -> DB MALWARE DETECTED: EICAR-Test-File (Risk: 15)
+  -> ClamAV MALWARE DETECTED: Eicar-Test-Signature (Risk: 15)
+                                                                                
+============================================================
+  [!] MALICIOUS FILES DETECTED ON THIS DRIVE
+============================================================
+  Found 1 dangerous file(s):
+    1. /tmp/usb_scanner_quarantine/sda/yara_test.txt
+
+  You have two options:
+    [y] QUARANTINE the malicious files and allow access to the rest of the drive
+    [n] BLOCK the entire drive (no access)
+
+  Note: Quarantined files are moved to a secure vault and can be
+  restored later if they turn out to be false positives.
+
+  Do you want to sanitize this drive? (y/n): [DEBUG AUDIO] paplay (auto env) returncode=0 stderr=
+[DEBUG AUDIO] paplay (auto env) returncode=0 stderr=
+[DEBUG AUDIO] paplay (auto env) returncode=0 stderr=
+[!] event5: not found in /proc/bus/input/devices (non-USB or already disconnected — skipping)
+[!] event9: not found in /proc/bus/input/devices (non-USB or already disconnected — skipping)
