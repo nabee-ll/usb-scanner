@@ -1797,6 +1797,70 @@ def handle_usb_device(device):
                     flags.append("Storage whitelist invalidated: serial or fingerprint changed")
                     invalidate_storage_trust(vid_pid, "storage trust changed")
 
+        if type_mismatch:
+            reason_str = (
+                f"declared type '{declared_device_type}' does not match detected type '{detected_device_type}'"
+            )
+            print(Colors.RED + f"[!] Device is NOT SAFE. Keeping storage unavailable." + Colors.END)
+            print(Colors.RED + f"    Reason: {reason_str}" + Colors.END)
+            if storage_fingerprint:
+                print(f"    Storage Hash: {storage_fingerprint}")
+            for item in scanned_storage:
+                keep_storage_blocked(
+                    item["device_node"],
+                    item["mount_path"],
+                    item["quarantine_mount"],
+                )
+            usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
+            if usb_port:
+                deauthorize_usb_device(usb_port)
+
+            print("\n" + "=" * 60)
+            print(Colors.BOLD + Colors.CYAN + "        DEVICE TYPE MISMATCH REPORT        " + Colors.END)
+            print("=" * 60)
+            print(f"  Time           : {datetime.now()}")
+            print(f"  Vendor         : {usb_info['vendor']}")
+            print(f"  Model          : {usb_info['model']}")
+            print(f"  VID:PID        : {vid_pid}")
+            print(f"  Serial         : {usb_info['serial']}")
+            print(f"  USB Class      : {usb_info['usb_class']}")
+            print(f"  Declared Type  : {declared_device_type}")
+            print(f"  Detected Type  : {detected_device_type}")
+            print(f"  Policy Risk    : {policy_risk}")
+            print(f"  Total Risk     : {original_total_risk + policy_risk}")
+            print(f"  Threat Level   : {threat_level(original_total_risk + policy_risk)}")
+            print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Type mismatch" + Colors.END)
+            if flags:
+                print("  Flags / Findings:")
+                for f in flags:
+                    print(f"    - {f}")
+            print("=" * 60 + "\n")
+
+            generate_pdf_report(
+                usb_info,
+                base_risk,
+                original_storage_risk,
+                hid_risk,
+                policy_risk,
+                original_total_risk + policy_risk,
+                original_malware_detected,
+                flags,
+                sanitized=False,
+                declared_device_type=declared_device_type,
+                detected_device_type=detected_device_type,
+            )
+
+            log_device_decision(
+                usb_info,
+                declared_device_type,
+                detected_device_type,
+                "BLOCKED",
+                reason_str,
+                risk_score=policy_risk + (5 if storage_trust_invalidated else 0),
+            )
+            print(Colors.GREEN + "[OK] Device analysis complete. Ready for next device..." + Colors.END)
+            return
+
         # ── Phase 4: Sanitization prompt ──────────────────────────────────────
         sanitized = False
         if malware_detected and all_malicious_files:
