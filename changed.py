@@ -29,6 +29,7 @@ except ImportError:
     FPDF = None
 
 from db_init import DB_NAME, ensure_database
+from backend.scanner.yara_engine import scan_bytes as yara_scan_bytes
 
 # ==========================================
 # TERMINAL COLORS
@@ -649,6 +650,16 @@ def static_analyze(file_path: str) -> list:
             head = f.read(4)
             f.seek(0)
             data = f.read()
+
+        yara_findings = yara_scan_bytes(data, os.path.basename(file_path))
+        for finding in yara_findings:
+            findings.append({
+                "issue": finding.issue,
+                "risk": finding.risk,
+                "rule": finding.rule,
+                "tags": finding.tags,
+                "meta": finding.meta,
+            })
             
         # 1. File Type Validation (Magic Bytes Anti-evasion)
         is_exe = head[:2] == b"MZ"
