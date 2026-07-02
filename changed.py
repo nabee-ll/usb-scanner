@@ -1211,6 +1211,87 @@ def analyze_descriptors(device):
         "usb_driver": device.get("ID_USB_DRIVER",            "Unknown"),
     }
 
+def normalize_device_type(value):
+    """Map freeform user input to the device categories we understand."""
+    if not value:
+        return "other"
+
+    normalized = value.strip().lower()
+    aliases = {
+        "storage": {"storage", "usb storage", "drive", "disk", "pendrive", "flash", "flash drive"},
+        "scanner": {"scanner", "scan", "imaging", "image scanner"},
+        "keyboard": {"keyboard", "kbd"},
+        "mouse": {"mouse", "pointer"},
+        "phone": {"phone", "mobile", "smartphone", "mtp", "ptp"},
+        "printer": {"printer"},
+        "camera": {"camera"},
+        "hub": {"hub"},
+        "other": {"other", "unknown", "something else"},
+    }
+    for canonical, options in aliases.items():
+        if normalized == canonical or normalized in options:
+            return canonical
+    return normalized
+
+def prompt_declared_device_type(usb_info):
+    """Ask the user what kind of device they inserted."""
+    print(Colors.CYAN + "\n[ DEVICE TYPE CHECK ]" + Colors.END)
+    print(f"  Vendor : {usb_info['vendor']}")
+    print(f"  Model  : {usb_info['model']}")
+    print(f"  VID:PID: {usb_info['vid']}:{usb_info['pid']}")
+    print("  Enter the device type as you know it (storage/scanner/keyboard/mouse/phone/printer/camera/other).")
+
+    while True:
+        declared = input(Colors.YELLOW + "  What device are you inserting? " + Colors.END).strip()
+        declared_type = normalize_device_type(declared)
+        if declared_type:
+            return declared_type
+
+def detect_actual_device_type(device, usb_info):
+    """Infer the device type from udev metadata and mountability."""
+    class_name = (usb_info.get("usb_class") or "Unknown").lower()
+
+    if is_mtp_or_ptp_device(device):
+        return "phone"
+
+    if usb_device_has_storage(device):
+        return "storage"
+
+    if any(keyword in class_name for keyword in ("scanner", "imaging")):
+        return "scanner"
+    if any(keyword in class_name for keyword in ("keyboard", "human interface", "hid")):
+        return "keyboard"
+    if "mouse" in class_name:
+        return "mouse"
+    if "printer" in class_name:
+        return "printer"
+    if "camera" in class_name:
+        return "camera"
+    if "hub" in class_name:
+        return "hub"
+
+    return "other"
+
+def log_device_decision(device_info, declared_type, detected_type, decision, reason, risk_score=0):
+    """Write a device-level decision entry to the scan history log."""
+    log_file = os.path.join(os.path.dirname(__file__), "scan_log.json")
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "device": device_info,
+        "file": None,
+        "risk_level": calculate_risk([{ "risk": risk_score }]) if risk_score else ("HIGH" if decision == "BLOCKED" else "LOW"),
+        "risk_score": risk_score,
+        "findings": [{"issue": reason, "risk": risk_score}] if reason else [],
+        "declared_device_type": declared_type,
+        "detected_device_type": detected_type,
+        "decision": decision,
+    }
+    try:
+        with open(log_file, "a") as lf:
+            lf.write(json.dumps(log_entry) + "\n")
+    except Exception:
+        pass
+
 def structural_rules(descriptor):
     risk, flags = 0, []
     if descriptor["serial"] == "Unknown":
@@ -1243,7 +1324,7 @@ def print_whitelisted_hid_report(usb_info, vid_pid):
     print("━" * 60 + "\n")
     print(Colors.GREEN + "[✓] Device analysis complete. Ready for next device..." + Colors.END)
 
-def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk, malware_detected, flags, sanitized=False):
+def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, policy_risk, total_risk, malware_detected, flags, sanitized=False, declared_device_type="unknown", detected_device_type="unknown"):
     if FPDF is None:
         print(Colors.YELLOW +
               "[!] PDF skipped — install dependencies: .venv/bin/pip install -r requirements.txt" +
@@ -1323,6 +1404,16 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
                 pdf.cell(col1, 8, label, border=0)
                 pdf.set_font("Helvetica", '', 10)
                 pdf.cell(col2, 8, val, border=0, ln=1)
+
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.cell(col1, 8, "Declared Type")
+            pdf.set_font("Helvetica", '', 10)
+            pdf.cell(col2, 8, declared_device_type.title(), ln=1)
+
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.cell(col1, 8, "Detected Type")
+            pdf.set_font("Helvetica", '', 10)
+            pdf.cell(col2, 8, detected_device_type.title(), ln=1)
                 
             pdf.ln(6)
             
@@ -1345,6 +1436,11 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
             pdf.cell(col1, 8, "HID / Keystroke Injection:")
             pdf.set_font("Helvetica", '', 10)
             pdf.cell(col2, 8, str(hid_risk), ln=1)
+
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.cell(col1, 8, "Policy / Type Mismatch:")
+            pdf.set_font("Helvetica", '', 10)
+            pdf.cell(col2, 8, str(policy_risk), ln=1)
             
             pdf.ln(2)
             pdf.set_draw_color(0, 0, 0)
@@ -1374,6 +1470,21 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, total_risk,
                 pdf.multi_cell(0, 10, "[!] MALWARE OR MALICIOUS SCRIPTS DETECTED ON DEVICE", border=1, align='C', fill=True)
                 pdf.set_text_color(0, 0, 0)
                 pdf.ln(6)
+
+            if declared_device_type != "unknown" and detected_device_type != "unknown":
+                pdf.set_fill_color(255, 248, 225)
+                pdf.set_text_color(133, 100, 4)
+                pdf.set_font("Helvetica", 'B', 11)
+                pdf.multi_cell(
+                    0,
+                    8,
+                    f"[TYPE CHECK] Declared: {declared_device_type.title()} | Detected: {detected_device_type.title()}",
+                    border=1,
+                    align='C',
+                    fill=True,
+                )
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(4)
             
             # 7. Detailed Findings
             pdf.set_font("Helvetica", 'B', 12)
@@ -1405,6 +1516,71 @@ def handle_usb_device(device):
         usb_info = analyze_descriptors(device)
         vid_pid = format_vid_pid(usb_info["vid"], usb_info["pid"])
 
+        declared_device_type = prompt_declared_device_type(usb_info)
+        detected_device_type = detect_actual_device_type(device, usb_info)
+        type_match = declared_device_type == detected_device_type
+
+        if not type_match:
+            mismatch_reason = (
+                f"DEVICE TYPE MISMATCH: user declared '{declared_device_type}' "
+                f"but detected '{detected_device_type}'"
+            )
+            print(Colors.RED + Colors.BOLD + "\n[!] Device rejected: type mismatch detected." + Colors.END)
+            print(Colors.RED + f"    Declared: {declared_device_type} | Detected: {detected_device_type}" + Colors.END)
+
+            base_risk, flags = structural_rules(usb_info)
+            flags.append(mismatch_reason)
+            policy_risk = 15
+            total_risk = base_risk + policy_risk
+
+            print("\n" + "=" * 60)
+            print(Colors.BOLD + Colors.CYAN + "        DEVICE TYPE MISMATCH REPORT        " + Colors.END)
+            print("=" * 60)
+            print(f"  Time           : {datetime.now()}")
+            print(f"  Vendor         : {usb_info['vendor']}")
+            print(f"  Model          : {usb_info['model']}")
+            print(f"  VID:PID        : {vid_pid}")
+            print(f"  Serial         : {usb_info['serial']}")
+            print(f"  USB Class      : {usb_info['usb_class']}")
+            print(f"  Declared Type   : {declared_device_type}")
+            print(f"  Detected Type   : {detected_device_type}")
+            print(f"  Policy Risk     : {policy_risk}")
+            print(f"  Total Risk      : {total_risk}")
+            print(f"  Threat Level    : {threat_level(total_risk)}")
+            print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Type mismatch" + Colors.END)
+            print("  Flags / Findings:")
+            for f in flags:
+                print(f"    - {f}")
+            print("=" * 60 + "\n")
+
+            log_device_decision(
+                usb_info,
+                declared_device_type,
+                detected_device_type,
+                "BLOCKED",
+                mismatch_reason,
+                risk_score=policy_risk,
+            )
+
+            generate_pdf_report(
+                usb_info,
+                base_risk,
+                0,
+                0,
+                policy_risk,
+                total_risk,
+                False,
+                flags,
+                sanitized=False,
+                declared_device_type=declared_device_type,
+                detected_device_type=detected_device_type,
+            )
+
+            usb_port = _sysfs_port_from_vid_pid(usb_info['vid'], usb_info['pid'])
+            if usb_port:
+                deauthorize_usb_device(usb_port)
+            return
+
         # Whitelisted keyboard/mouse — skip full report (check before 3s wait)
         if vid_pid in HID_WHITELIST and not usb_device_has_storage(device):
             print(Colors.CYAN + f"\n[ EVENT ] Whitelisted device connected: {HID_WHITELIST[vid_pid]}" + Colors.END)
@@ -1419,6 +1595,7 @@ def handle_usb_device(device):
         hid_data = HID_RISK_CACHE.get(vid_pid, {"risk": 0, "flags": []})
         hid_risk = hid_data["risk"]
         flags.extend(hid_data["flags"])
+        policy_risk = 0
         
         # ── Phase 2: Storage scan ─────────────────────────────────────────────
         storage_risk = 0
@@ -1562,7 +1739,7 @@ def handle_usb_device(device):
             print("=" * 60)
 
         # ── Phase 5: Final risk calculation (post-sanitization) ───────────────
-        total_risk = base_risk + storage_risk + hid_risk
+        total_risk = base_risk + storage_risk + hid_risk + policy_risk
 
         # ── Phase 6: Terminal Report ──────────────────────────────────────────
         print("\n" + "=" * 60)
@@ -1579,12 +1756,15 @@ def handle_usb_device(device):
         print(f"  Hardware Risk  : {base_risk}")
         print(f"  Storage Risk   : {original_storage_risk}" + (f" -> 0 (sanitized)" if sanitized else ""))
         print(f"  HID Risk       : {hid_risk}")
+        print(f"  Policy Risk    : {policy_risk}")
         if sanitized:
             print(f"  Original Total : {original_total_risk}")
             print(f"  Final Total    : {total_risk} (after sanitization)")
         else:
             print(f"  Total Risk     : {total_risk}")
         print(f"  Threat Level   : {threat_level(total_risk)}")
+        print(f"  Declared Type  : {declared_device_type}")
+        print(f"  Detected Type  : {detected_device_type}")
         if sanitized:
             print(Colors.GREEN + Colors.BOLD + "  Status         : SANITIZED - Drive cleaned and allowed" + Colors.END)
         elif malware_detected:
@@ -1609,10 +1789,13 @@ def handle_usb_device(device):
             base_risk,
             original_storage_risk,
             hid_risk,
+            policy_risk,
             original_total_risk,
             original_malware_detected,
             flags,
             sanitized=sanitized,
+            declared_device_type=declared_device_type,
+            detected_device_type=detected_device_type,
         )
         
         # ── Phase 8: Device access decision ───────────────────────────────────
