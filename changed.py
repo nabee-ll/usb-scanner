@@ -1443,10 +1443,11 @@ def structural_rules(descriptor):
 def usb_device_has_storage(device):
     """True if this USB device exposes a storage partition."""
     context = pyudev.Context()
+    device_sys_path = getattr(device, "sys_path", None)
     for block_device in context.list_devices(subsystem="block"):
         if block_device.device_type == "partition":
             parent = block_device.find_parent("usb", "usb_device")
-            if parent and parent.device_path == device.device_path:
+            if parent and getattr(parent, "sys_path", None) == device_sys_path:
                 return True
     return False
 
@@ -1701,7 +1702,7 @@ def handle_usb_device(device):
                 is_mountable = block_device.get("ID_FS_USAGE") == "filesystem"
                 if is_mountable or block_device.device_type == "partition":
                     parent = block_device.find_parent("usb", "usb_device")
-                    if parent and parent.device_path == device.device_path:
+                    if parent and getattr(parent, "sys_path", None) == getattr(device, "sys_path", None):
                         has_storage = True
                         if not antivirus_available:
                             storage_risk += 5

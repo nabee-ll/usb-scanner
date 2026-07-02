@@ -94,7 +94,48 @@ def main():
     except Exception as e:
         bad("hash detection", str(e))
 
-    section("4. Static analysis engine")
+    section("4. YARA smoke test")
+    try:
+        from backend.scanner import yara_engine
+
+        eicar = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+        if yara_engine.yara is None or not yara_engine.RULES_PATH.exists():
+            skip("direct YARA scan", "yara-python or bundled rules unavailable")
+        else:
+            rules = yara_engine.load_rules()
+            if rules is None:
+                skip("direct YARA scan", "YARA rules could not be compiled")
+            else:
+                tmp = tempfile.mkdtemp()
+                try:
+                    sample_path = os.path.join(tmp, "yara_test.txt")
+                    with open(sample_path, "wb") as f:
+                        f.write(eicar)
+
+                    direct_findings = yara_engine.scan_bytes(eicar, "yara_test.txt")
+                    direct_rules = {finding.rule for finding in direct_findings}
+                    if "USB_EICAR_Test" in direct_rules:
+                        ok("direct YARA scan", ", ".join(sorted(direct_rules)))
+                    else:
+                        bad("direct YARA scan", f"rules={sorted(direct_rules)}")
+
+                    try:
+                        from changed import static_analyze
+                    except ImportError as e:
+                        skip("scanner YARA integration", f"scanner module unavailable: {e}")
+                    else:
+                        static_findings = static_analyze(sample_path)
+                        static_rules = {finding.get("rule") for finding in static_findings if isinstance(finding, dict)}
+                        if "USB_EICAR_Test" in static_rules:
+                            ok("scanner YARA integration", ", ".join(sorted(rule for rule in static_rules if rule)))
+                        else:
+                            bad("scanner YARA integration", f"rules={sorted(rule for rule in static_rules if rule)}")
+                finally:
+                    shutil.rmtree(tmp)
+    except Exception as e:
+        bad("YARA smoke test", str(e))
+
+    section("5. Static analysis engine")
     try:
         from changed import static_analyze, calculate_risk
 
@@ -122,7 +163,7 @@ def main():
     except Exception as e:
         bad("static analysis", str(e))
 
-    section("5. PDF report generation")
+    section("6. PDF report generation")
     try:
         from changed import generate_pdf_report, FPDF
 
@@ -149,7 +190,7 @@ def main():
     except Exception as e:
         bad("PDF report", str(e))
 
-    section("6. HID device parser")
+    section("7. HID device parser")
     try:
         from changed import _parse_proc_input, calculate_hid_risk, HID_WHITELIST
 
@@ -163,7 +204,7 @@ def main():
     except Exception as e:
         bad("HID parser", str(e))
 
-    section("7. USB event monitor (pyudev)")
+    section("8. USB event monitor (pyudev)")
     try:
         import pyudev
 
@@ -175,13 +216,13 @@ def main():
     except Exception as e:
         bad("USB udev monitor", str(e))
 
-    section("8. Mount helper (udisks)")
+    section("9. Mount helper (udisks)")
     if shutil.which("udisksctl"):
         ok("udisksctl found", "will try to mount USB if desktop does not")
     else:
         skip("udisksctl", "install udisks2 for auto-mount fallback")
 
-    section("9. Phone/MTP mount helpers")
+    section("10. Phone/MTP mount helpers")
     helpers = []
     for helper in ("gio", "simple-mtpfs", "jmtpfs"):
         if shutil.which(helper):
@@ -191,7 +232,7 @@ def main():
     else:
         skip("MTP helper", "install gio/gvfs or simple-mtpfs to scan Android phone storage")
 
-    section("10. Root privileges (storage gate + HID blocking)")
+    section("11. Root privileges (storage gate + HID blocking)")
     if not hasattr(os, "geteuid"):
         skip("root check", "not available on this OS; enforcement is Linux-only")
     elif os.geteuid() == 0:
