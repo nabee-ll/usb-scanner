@@ -1,1 +1,0 @@
-"""Icon assets package marker."""
