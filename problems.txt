@@ -1,6 +1,5 @@
 printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > yara_test.txt
 
-
 [ DEVICE TYPE CHECK ]
   Vendor : USB
   Model  : SanDisk_3.2Gen1
@@ -8,9 +7,9 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
 
   Use ↑ / ↓ to choose the device type, then press Enter.
 
-    Storage / USB Drive
+  ➜ Storage / USB Drive
     Scanner
-  ➜ Keyboard
+    Keyboard
     Mouse
     Phone / MTP / PTP
     Printer
@@ -21,33 +20,41 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
 [ EVENT ] USB Device Detected - Analyzing...
 /home/raspberrypi/usb-scanner/changed.py:1710: DeprecationWarning: Will be removed in 1.0. Access properties with Device.properties.
   if parent and parent.device_path == device.device_path:
-[*] Found partition: /dev/sda
+[*] Found partition: /dev/sdb
 [*] USB auto-mounted at /media/raspberrypi/DAB7-E812; unmounting before safety scan.
-[+] Quarantine-mounted read-only at /tmp/usb_scanner_quarantine/sda
-[+] Scanning from /tmp/usb_scanner_quarantine/sda
+[+] Quarantine-mounted read-only at /tmp/usb_scanner_quarantine/sdb
+[+] Scanning from /tmp/usb_scanner_quarantine/sdb
 
 [ SCANNING ] High-Speed Threaded FS Analysis...
 
 
-[*] HIGH RISK FILE: /tmp/usb_scanner_quarantine/sda/yara_test.txt
+[*] HIGH RISK FILE: /tmp/usb_scanner_quarantine/sdb/yara_test.txt
   -> DB MALWARE DETECTED: EICAR-Test-File (Risk: 15)
   -> ClamAV MALWARE DETECTED: Eicar-Test-Signature (Risk: 15)
-                                                                                
+[!] Device is NOT SAFE. Keeping storage unavailable.                            
+    Reason: declared type 'storage' does not match detected type 'other'
+    Storage Hash: 2d93b0732a446f316f6ce5f42bcf9507304da3e85185d01face8bd715ba84291
+[!] Device rejected. /dev/sdb is not mounted for user access.
+  [✓] Deauthorized USB port 1-1.4; device blocked.
+
 ============================================================
-  [!] MALICIOUS FILES DETECTED ON THIS DRIVE
+        DEVICE TYPE MISMATCH REPORT        
 ============================================================
-  Found 1 dangerous file(s):
-    1. /tmp/usb_scanner_quarantine/sda/yara_test.txt
+  Time           : 2026-07-02 13:34:29.116805
+  Vendor         : USB
+  Model          : SanDisk_3.2Gen1
+  VID:PID        : 0781:5591
+  Serial         : 0401b21bf79486416e44a7ed556860e46643b869f41ff07b089f79af8328ec66c47200000000000000000000b02f452c001390189155810724b21b40
+  USB Class      : Unknown
+  Declared Type  : storage
+  Detected Type  : other
+  Policy Risk    : 15
+  Total Risk     : 45
+  Threat Level   : HIGH
+  Status         : BLOCKED - Type mismatch
+  Flags / Findings:
+    - DEVICE TYPE MISMATCH: user declared 'storage' but detected 'other'
+============================================================
 
-  You have two options:
-    [y] QUARANTINE the malicious files and allow access to the rest of the drive
-    [n] BLOCK the entire drive (no access)
-
-  Note: Quarantined files are moved to a secure vault and can be
-  restored later if they turn out to be false positives.
-
-  Do you want to sanitize this drive? (y/n): [DEBUG AUDIO] paplay (auto env) returncode=0 stderr=
-[DEBUG AUDIO] paplay (auto env) returncode=0 stderr=
-[DEBUG AUDIO] paplay (auto env) returncode=0 stderr=
-[!] event5: not found in /proc/bus/input/devices (non-USB or already disconnected — skipping)
-[!] event9: not found in /proc/bus/input/devices (non-USB or already disconnected — skipping)
+[+] PDF Report Generated: /home/raspberrypi/usb-scanner/reports/scan_report_0781_5591_20260702_133429.pdf
+[OK] Device analysis complete. Ready for next device...
