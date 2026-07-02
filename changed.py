@@ -51,6 +51,7 @@ class Colors:
 HID_RISK_CACHE = {}
 
 WHITELIST_FILE = os.path.join(os.path.dirname(__file__), "whitelist.json")
+STORAGE_WHITELIST_FILE = os.path.join(os.path.dirname(__file__), "storage_whitelist.json")
 QUARANTINE_DIR = os.path.join(os.path.dirname(__file__), "quarantine")
 QUARANTINE_LOG = os.path.join(QUARANTINE_DIR, "quarantine_log.json")
 EMAIL_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "email_config.json")
@@ -97,6 +98,29 @@ def load_whitelist():
 
 load_whitelist()
 
+def load_storage_whitelist():
+    global STORAGE_WHITELIST
+    STORAGE_WHITELIST = {}
+
+    if not os.path.exists(STORAGE_WHITELIST_FILE):
+        try:
+            with open(STORAGE_WHITELIST_FILE, "w") as f:
+                json.dump({}, f, indent=4)
+            _fix_file_ownership(STORAGE_WHITELIST_FILE)
+        except Exception:
+            pass
+
+    if os.path.exists(STORAGE_WHITELIST_FILE):
+        try:
+            with open(STORAGE_WHITELIST_FILE, "r") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    STORAGE_WHITELIST.update(data)
+        except Exception:
+            pass
+
+load_storage_whitelist()
+
 def save_whitelist():
     try:
         with open(WHITELIST_FILE, "w") as f:
@@ -104,6 +128,40 @@ def save_whitelist():
         _fix_file_ownership(WHITELIST_FILE)
     except Exception:
         pass
+
+def save_storage_whitelist():
+    try:
+        with open(STORAGE_WHITELIST_FILE, "w") as f:
+            json.dump(STORAGE_WHITELIST, f, indent=4)
+        _fix_file_ownership(STORAGE_WHITELIST_FILE)
+    except Exception:
+        pass
+
+def trust_storage_device(vid_pid, usb_info, fingerprint, file_hashes):
+    STORAGE_WHITELIST[vid_pid] = {
+        "label": f"{usb_info.get('vendor', 'Unknown')} {usb_info.get('model', 'USB Device')}",
+        "serial": usb_info.get("serial", "Unknown"),
+        "fingerprint": fingerprint,
+        "file_hashes": file_hashes,
+        "trusted_at": datetime.now().isoformat(),
+        "device_type": "storage",
+    }
+    save_storage_whitelist()
+
+def invalidate_storage_trust(vid_pid, reason):
+    if vid_pid in STORAGE_WHITELIST:
+        del STORAGE_WHITELIST[vid_pid]
+        save_storage_whitelist()
+    return reason
+
+def storage_trust_matches(vid_pid, usb_info, fingerprint):
+    entry = STORAGE_WHITELIST.get(vid_pid)
+    if not isinstance(entry, dict):
+        return False, None
+
+    serial_matches = entry.get("serial") == usb_info.get("serial")
+    fingerprint_matches = entry.get("fingerprint") == fingerprint and fingerprint is not None
+    return serial_matches and fingerprint_matches, entry
 
 
 def move_to_quarantine(file_path, device_info=None):
@@ -1122,7 +1180,7 @@ def scan_file_task(path):
     except Exception as e:
         findings.append({"issue": f"Analysis error: {str(e)}", "risk": 0})
         
-    return path, findings
+    return path, findings, sha
 
 def scan_storage(mount_path, device_info=None):
     print(Colors.CYAN + Colors.BOLD + "\n[ SCANNING ] High-Speed Threaded FS Analysis...\n" + Colors.END)
@@ -1131,6 +1189,8 @@ def scan_storage(mount_path, device_info=None):
     malware_detected = False
     all_files = []
     malicious_files = []
+    file_hash_materials = []
+    file_hashes = []
     
     try:
         for root, dirs, files in os.walk(mount_path):
@@ -1149,14 +1209,21 @@ def scan_storage(mount_path, device_info=None):
             path = future_to_path[future]
             try:
                 # 4. Timeout Protection (3 seconds)
-                res_path, findings = future.result(timeout=3.0)
+                res_path, findings, sha = future.result(timeout=3.0)
             except concurrent.futures.TimeoutError:
                 findings = [{"issue": "File scanning timed out (>3s limit)", "risk": 2}]
+                sha = None
             except Exception as e:
                 findings = [{"issue": f"Thread exception: {e}", "risk": 0}]
+                sha = None
             
             if not findings:
                 continue
+
+            if sha:
+                relative_path = os.path.relpath(path, mount_path)
+                file_hash_materials.append(f"{relative_path}:{sha}")
+                file_hashes.append({"path": path, "relative_path": relative_path, "sha256": sha})
 
             # 2. Risk Scoring Engine Integration
             risk_level = calculate_risk(findings)
@@ -1195,7 +1262,11 @@ def scan_storage(mount_path, device_info=None):
                 pass
 
     print(" " * 80, end="\r")
-    return master_risk_score, malware_detected, malicious_files
+    storage_fingerprint = None
+    if file_hash_materials:
+        digest_input = "\n".join(sorted(file_hash_materials)).encode("utf-8")
+        storage_fingerprint = hashlib.sha256(digest_input).hexdigest()
+    return master_risk_score, malware_detected, malicious_files, storage_fingerprint, file_hashes
 
 # ==========================================
 # THREAT LEVEL LABEL
@@ -1582,14 +1653,20 @@ def generate_pdf_report(usb_info, base_risk, storage_risk, hid_risk, policy_risk
 def handle_usb_device(device):
     try:
         load_whitelist()
+        load_storage_whitelist()
         usb_info = analyze_descriptors(device)
         vid_pid = format_vid_pid(usb_info["vid"], usb_info["pid"])
 
         declared_device_type = prompt_declared_device_type(usb_info)
         detected_device_type = detect_actual_device_type(device, usb_info)
 
-        # Whitelisted keyboard/mouse — skip full report (check before 3s wait)
-        if vid_pid in HID_WHITELIST and not usb_device_has_storage(device):
+        # Whitelisted HID devices are only skipped when the hardware really behaves like HID.
+        if (
+            vid_pid in HID_WHITELIST
+            and detected_device_type in {"keyboard", "mouse"}
+            and not usb_device_has_storage(device)
+            and declared_device_type == detected_device_type
+        ):
             print(Colors.CYAN + f"\n[ EVENT ] Whitelisted device connected: {HID_WHITELIST[vid_pid]}" + Colors.END)
             print_whitelisted_hid_report(usb_info, vid_pid)
             return
@@ -1616,6 +1693,9 @@ def handle_usb_device(device):
         scanned_paths = []
         scanned_storage = []
         all_malicious_files = []
+        file_hashes = []
+        storage_fingerprint_materials = []
+        storage_fingerprint = None
         antivirus_available = _clamav_command() is not None
 
         # Retry partition detection — kernel may need extra time to register block devices
@@ -1643,11 +1723,15 @@ def handle_usb_device(device):
                                 "quarantine_mount": quarantine_mount,
                                 "safe": False,
                             })
-                            pr, pm, pbad = scan_storage(mount, usb_info)
+                            pr, pm, pbad, current_storage_fingerprint, current_file_hashes = scan_storage(mount, usb_info)
                             storage_risk += pr
                             if pm:
                                 malware_detected = True
                                 all_malicious_files.extend(pbad)
+                            if current_storage_fingerprint:
+                                storage_fingerprint_materials.append(current_storage_fingerprint)
+                            if current_file_hashes:
+                                file_hashes.extend(current_file_hashes)
                         else:
                             storage_risk += 15
                             flags.append(f"Could not mount {block_device.device_node} for safety scan (blocked by default)")
@@ -1671,17 +1755,25 @@ def handle_usb_device(device):
                 for mount in mtp_mounts:
                     print(f"[+] Phone storage accessible at {mount}")
                     scanned_paths.append(mount)
-                    pr, pm, pbad = scan_storage(mount, usb_info)
+                    pr, pm, pbad, current_storage_fingerprint, current_file_hashes = scan_storage(mount, usb_info)
                     storage_risk += pr
                     if pm:
                         malware_detected = True
                         all_malicious_files.extend(pbad)
+                    if current_storage_fingerprint:
+                        storage_fingerprint_materials.append(current_storage_fingerprint)
+                    if current_file_hashes:
+                        file_hashes.extend(current_file_hashes)
             else:
                 storage_risk += 15
                 flags.append("MTP/PTP phone detected but no accessible file-transfer mount found (blocked by default)")
                 print(Colors.YELLOW +
                       "[!] Phone detected, but files are not accessible. Unlock the phone and select File Transfer/MTP." +
                       Colors.END)
+
+        if storage_fingerprint_materials:
+            aggregate_input = "\n".join(sorted(storage_fingerprint_materials)).encode("utf-8")
+            storage_fingerprint = hashlib.sha256(aggregate_input).hexdigest()
 
         if not has_storage:
             flags.append("No block storage or MTP/PTP file-transfer interface found")
@@ -1690,6 +1782,20 @@ def handle_usb_device(device):
         original_storage_risk = storage_risk
         original_malware_detected = malware_detected
         original_total_risk = base_risk + storage_risk + hid_risk
+
+        trusted_storage = False
+        storage_trust_invalidated = False
+        storage_trust_entry = None
+        if detected_device_type == "storage":
+            storage_trust_entry = STORAGE_WHITELIST.get(vid_pid)
+            if storage_trust_entry:
+                if storage_trust_entry.get("serial") == usb_info.get("serial") and storage_trust_entry.get("fingerprint") == storage_fingerprint:
+                    trusted_storage = True
+                    flags.append("Storage whitelist verified: serial and fingerprint match")
+                else:
+                    storage_trust_invalidated = True
+                    flags.append("Storage whitelist invalidated: serial or fingerprint changed")
+                    invalidate_storage_trust(vid_pid, "storage trust changed")
 
         # ── Phase 4: Sanitization prompt ──────────────────────────────────────
         sanitized = False
@@ -1777,6 +1883,8 @@ def handle_usb_device(device):
         print(f"  Threat Level   : {threat_level(total_risk)}")
         print(f"  Declared Type  : {declared_device_type}")
         print(f"  Detected Type  : {detected_device_type}")
+        if storage_fingerprint:
+            print(f"  Storage Hash   : {storage_fingerprint}")
         if type_mismatch:
             print(Colors.RED + Colors.BOLD + "  Status         : BLOCKED - Type mismatch" + Colors.END)
         elif sanitized:
@@ -1787,7 +1895,7 @@ def handle_usb_device(device):
             print(f"\n  Scanned Paths:")
             for path in scanned_paths:
                 print(f"    - {path}")
-        if vid_pid in HID_WHITELIST:
+        if detected_device_type in {"keyboard", "mouse"} and vid_pid in HID_WHITELIST:
             print(f"\n  HID Whitelist  : {HID_WHITELIST[vid_pid]}")
         if flags:
             print(f"\n  Flags / Findings:")
@@ -1841,12 +1949,15 @@ def handle_usb_device(device):
             print(Colors.GREEN + "[OK] Device analysis complete. Ready for next device..." + Colors.END)
             return
 
+        if storage_trust_invalidated:
+            print(Colors.RED + "[!] Stored fingerprint no longer matches. Whitelist entry removed and device will be treated as untrusted." + Colors.END)
+
         if not has_storage:
             # For pure HID devices (mice/keyboards), allow them if there's no active HID attack.
             # A base_risk of 1 or 2 (e.g., missing serial number) is common for cheap generic mice and shouldn't cause a strict block.
             safe_to_use = (hid_risk == 0 and base_risk < 8)
         else:
-            safe_to_use = sanitized or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
+            safe_to_use = sanitized or trusted_storage or (bool(scanned_paths) and not malware_detected and storage_risk == 0 and not storage_trust_invalidated)
             
         if safe_to_use:
             alert_device_clean(usb_info.get('model', 'USB Device'))
@@ -1858,7 +1969,7 @@ def handle_usb_device(device):
                 print(Colors.GREEN + "[*] Device is CLEAN. Accepting device for user access..." + Colors.END)
                 
             # Ask the user if they want to whitelist this clean device
-            if not sanitized and vid_pid not in HID_WHITELIST:
+            if detected_device_type in {"keyboard", "mouse"} and not sanitized and vid_pid not in HID_WHITELIST:
                 print()
                 while True:
                     wl_input = input(Colors.YELLOW + f"  [*] Do you want to add this device ({vid_pid}) to the trusted whitelist? (y/n): " + Colors.END).strip().lower()
@@ -1868,6 +1979,16 @@ def handle_usb_device(device):
                     HID_WHITELIST[vid_pid] = f"{usb_info.get('vendor', 'Unknown')} {usb_info.get('model', 'USB Device')}"
                     save_whitelist()
                     print(Colors.GREEN + f"  [+] Device {vid_pid} permanently added to whitelist." + Colors.END)
+                print()
+            elif detected_device_type == "storage" and not sanitized and not trusted_storage and not storage_trust_invalidated:
+                print()
+                while True:
+                    wl_input = input(Colors.YELLOW + f"  [*] Trust this storage device for future fingerprint checks? (y/n): " + Colors.END).strip().lower()
+                    if wl_input in ['y', 'n']:
+                        break
+                if wl_input == 'y':
+                    trust_storage_device(vid_pid, usb_info, storage_fingerprint, file_hashes)
+                    print(Colors.GREEN + f"  [+] Storage device {vid_pid} stored with serial and fingerprint." + Colors.END)
                 print()
 
             if base_risk > 0:
@@ -1891,6 +2012,8 @@ def handle_usb_device(device):
                 reason_parts.append(f"storage risk score = {storage_risk}")
             if not scanned_paths:
                 reason_parts.append("no partitions could be scanned")
+            if storage_trust_invalidated:
+                reason_parts.append("stored fingerprint changed")
             reason_str = ", ".join(reason_parts) if reason_parts else "unknown"
             print(Colors.RED + f"[!] Device is NOT SAFE. Keeping storage unavailable." + Colors.END)
             print(Colors.RED + f"    Reason: {reason_str}" + Colors.END)
@@ -1911,7 +2034,7 @@ def handle_usb_device(device):
                 detected_device_type,
                 "ALLOWED" if safe_to_use else "BLOCKED",
                 "scan completed",
-                risk_score=policy_risk,
+                risk_score=policy_risk + (5 if storage_trust_invalidated else 0),
             )
 
         print(Colors.GREEN + "[OK] Device analysis complete. Ready for next device..." + Colors.END)
