@@ -2386,8 +2386,8 @@ class DashboardPage(QWidget):
         self.storage_card.hide()
         self.recommendation_card.hide()
         
-        # Start a 4-second timer to automatically trigger device detection
-        self.start_simulated_detection_timer(4000)
+        # Waiting for real backend device events
+        # self.start_simulated_detection_timer(4000)  -- removed, backend drives events now
         
         theme_manager.theme_changed.connect(self.update_styles)
         self.update_styles()
@@ -2622,12 +2622,8 @@ class DashboardPage(QWidget):
         self.detect_new_device(device)
 
     def trigger_physical_injection(self):
-        if self.connected_device is not None:
-            self.reset_to_idle(logged_eject_device=self.connected_device)
-        else:
-            device = SIMULATED_DEVICES[self.device_idx]
-            self.device_idx = (self.device_idx + 1) % len(SIMULATED_DEVICES)
-            self.detect_new_device(device)
+        """Manual test trigger — no-op in backend mode."""
+        pass
 
     def reset_to_idle(self, logged_eject_device=None):
         self.clear_popups()
@@ -2660,7 +2656,7 @@ class DashboardPage(QWidget):
         self.connection_time_elapsed = 0
         self.connected_device = None
         
-        self.start_simulated_detection_timer(5000)
+        # Backend will fire device_detected when next device is plugged in
 
     def fade_in_widget(self, widget, duration=400):
         effect = QGraphicsOpacityEffect(widget)
