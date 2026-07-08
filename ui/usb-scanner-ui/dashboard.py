@@ -2467,12 +2467,13 @@ class DashboardPage(QWidget):
             pass # We'll need a popup for this later
 
     def on_scan_complete(self, payload):
-        self.on_scan_completed(
-            payload.get("malware_detected", False),
-            payload.get("threats", 0),
-            payload.get("files", 0),
-            payload.get("duration", "Completed")
-        )
+        scan_data = {
+            "malware_detected": payload.get("malware_detected", False),
+            "threats": payload.get("threats", 0),
+            "files": payload.get("files", 0),
+            "duration": payload.get("duration", "Completed")
+        }
+        self.on_scan_completed(scan_data)
 
     def trigger_automatic_device_found(self):
         pass
