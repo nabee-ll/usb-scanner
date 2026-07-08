@@ -60,7 +60,6 @@ class MainWindow(QMainWindow):
         # Connect functional bridges between pages
         self.page_dashboard.device_authorized.connect(self.log_device_authorized)
         self.page_dashboard.device_blocked.connect(self.log_device_blocked)
-        self.page_scan.scan_completed.connect(self.page_dashboard.on_scan_completed)
         
         self.update_theme_styles()
         theme_manager.theme_changed.connect(self.update_theme_styles)

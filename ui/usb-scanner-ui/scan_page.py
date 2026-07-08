@@ -84,9 +84,7 @@ class ScanPage(QWidget):
         
         layout.addWidget(self.card, 1)
         
-        # Scan Timer setup
-        self.scan_timer = QTimer(self)
-        self.scan_timer.timeout.connect(self.advance_scan)
+        # Real scan progress initialized via backend
         self.scan_progress = 0
         self.log_idx = 0
         
@@ -122,7 +120,6 @@ class ScanPage(QWidget):
 
     def set_backend(self, backend):
         self.backend = backend
-        self.scan_timer.stop()
         
         self.backend.log_received.connect(self.on_log_received)
         self.backend.scan_progress.connect(self.on_scan_progress)
@@ -150,6 +147,3 @@ class ScanPage(QWidget):
         self.lbl_scan_info.setText("Listening for backend scan events...")
         self.btn_scan.setEnabled(False)
         self.btn_scan.setText("SCANNING IN PROGRESS...")
-
-    def advance_scan(self):
-        pass
