@@ -12,12 +12,20 @@ fi
 
 .venv/bin/python3 db_init.py
 
-echo "[*] Disabling Raspberry Pi desktop USB automounting..."
-# Since this script may be run as root (sudo), we target the 'pi' user specifically
-if [[ -d /home/pi ]]; then
-    mkdir -p /home/pi/.config/pcmanfm/LXDE-pi/
-    echo -e "[volume]\nmount_on_startup=0\nmount_removable=0\nautorun=0" > /home/pi/.config/pcmanfm/LXDE-pi/pcmanfm.conf
-    chown -R pi:pi /home/pi/.config/pcmanfm || true
+echo "[*] Disabling desktop USB automounting at the OS level..."
+if [[ "$EUID" -eq 0 ]]; then
+    # Disable pcmanfm automount (for older LXDE)
+    if [[ -d /home/pi ]]; then
+        mkdir -p /home/pi/.config/pcmanfm/LXDE-pi/
+        echo -e "[volume]\nmount_on_startup=0\nmount_removable=0\nautorun=0" > /home/pi/.config/pcmanfm/LXDE-pi/pcmanfm.conf
+        chown -R pi:pi /home/pi/.config/pcmanfm || true
+    fi
+    # Add udev rule to hide USB drives from udisks2 (stops all Wayland/desktop popups)
+    echo 'ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{UDISKS_IGNORE}="1"' > /etc/udev/rules.d/99-hide-usb-from-udisks.rules
+    udevadm control --reload-rules
+    udevadm trigger
+else
+    echo "[!] Please run this script with sudo to disable USB automount popups."
 fi
 
 echo "[*] Starting USB Security Engine (Ctrl+C to stop)..."
