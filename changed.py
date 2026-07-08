@@ -2689,6 +2689,34 @@ def hid_monitor():
         print(Colors.RED + f"\n[!] HID monitor error: {e}" + Colors.END)
 
 
+def auto_install_clamav():
+    """Check if ClamAV is installed; if not, install it in the background."""
+    if _clamav_command() is not None:
+        return
+    
+    if not is_root_user():
+        print(Colors.YELLOW + "[!] ClamAV is missing. Auto-install requires root (sudo)." + Colors.END)
+        return
+        
+    def _install_thread():
+        print(Colors.YELLOW + "\n[*] ClamAV not found. Auto-installing in the background (this may take a few minutes)..." + Colors.END)
+        try:
+            subprocess.run(["apt-get", "update"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Use DEBIAN_FRONTEND=noninteractive to avoid prompts
+            env = os.environ.copy()
+            env["DEBIAN_FRONTEND"] = "noninteractive"
+            subprocess.run(["apt-get", "install", "-y", "clamav", "clamav-daemon"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Update virus definitions
+            subprocess.run(["systemctl", "stop", "clamav-freshclam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["freshclam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "start", "clamav-freshclam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(Colors.GREEN + "\n[*] ClamAV background installation completed successfully! Future USB scans will use it." + Colors.END)
+        except Exception as e:
+            print(Colors.RED + f"\n[!] Failed to auto-install ClamAV: {e}" + Colors.END)
+
+    threading.Thread(target=_install_thread, daemon=True).start()
+
+
 # ==========================================
 # MAIN ENTRY POINT
 # ==========================================
@@ -2741,6 +2769,9 @@ if __name__ == "__main__":
     
     print(Colors.GREEN + f"[*] Malware database: {db_path}" + Colors.END)
     print(Colors.GREEN + f"[*] HID whitelist: {len(HID_WHITELIST)} trusted device(s)" + Colors.END)
+    
+    # Ensure ClamAV is installed (Raspberry Pi auto-install)
+    auto_install_clamav()
     
     # Show quarantine vault status
     if os.path.exists(QUARANTINE_LOG):
