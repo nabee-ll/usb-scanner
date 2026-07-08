@@ -2122,8 +2122,10 @@ def monitor_usb():
     try:
         for device in iter(monitor.poll, None):
             if device.get("DEVTYPE") == "usb_device":
-                device_id = (f"{device.get('ID_VENDOR_ID')}:{device.get('ID_MODEL_ID')}"
-                             f":{device.get('ID_SERIAL_SHORT', '')}")
+                # Use sys_path as the unique identifier since it is consistent across add and remove events
+                device_id = getattr(device, 'sys_path', None)
+                if not device_id:
+                    continue
                 if device.action == "add":
                     if device_id in processed_devices:
                         continue
@@ -2131,8 +2133,7 @@ def monitor_usb():
                     t = threading.Thread(target=handle_usb_device, args=(device,), daemon=True)
                     t.start()
                 elif device.action == "remove":
-                    if device_id in processed_devices:
-                        processed_devices.remove(device_id)
+                    processed_devices.discard(device_id)
                     
                 if len(processed_devices) > 100:
                     processed_devices.clear()
