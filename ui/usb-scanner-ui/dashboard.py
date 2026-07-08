@@ -2456,7 +2456,10 @@ class DashboardPage(QWidget):
         
     def on_backend_prompt(self, prompt_id, payload):
         if prompt_id == "declare_device_type":
-            self.show_unknown_device_popup(payload.get("device", {}))
+            device = payload.get("device", {})
+            device["name"] = device.get("model", "USB Device")
+            device["category"] = device.get("usb_class", "Unknown")
+            self.show_unknown_device_popup(device)
         elif prompt_id == "sanitize_prompt":
             # Show a generic prompt or reuse a popup
             pass # We'll need a popup for this later
