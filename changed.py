@@ -31,6 +31,36 @@ except ImportError:
 from db_init import DB_NAME, ensure_database
 from backend.scanner.yara_engine import scan_bytes as yara_scan_bytes
 
+UI_MODE = False
+
+def emit_ui_event(event_type, data=None):
+    """Emit JSON events to stdout for the UI frontend."""
+    if not UI_MODE:
+        return
+    payload = {"type": event_type}
+    if isinstance(data, dict):
+        payload.update(data)
+    elif data is not None:
+        payload["message"] = str(data)
+    print(json.dumps(payload), file=sys.__stdout__, flush=True)
+
+def prompt_ui(prompt_id, data=None):
+    """Emit a prompt event and wait for a JSON response from stdin."""
+    if not UI_MODE:
+        return None
+    payload = {"type": "prompt", "prompt_id": prompt_id}
+    if data:
+        payload.update(data)
+    print(json.dumps(payload), file=sys.__stdout__, flush=True)
+    # Block and wait for response from stdin
+    try:
+        line = sys.stdin.readline()
+        if line:
+            return json.loads(line)
+    except Exception:
+        pass
+    return None
+
 # ==========================================
 # TERMINAL COLORS
 # ==========================================
@@ -1201,12 +1231,20 @@ def scan_storage(mount_path, device_info=None):
         
     log_file = os.path.join(os.path.dirname(__file__), "scan_log.json")
     
+    total_files = len(all_files)
+    processed = 0
+    
     # 9. Performance Optimization: ThreadPoolExecutor
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_to_path = {executor.submit(scan_file_task, path): path for path in all_files}
         
         for future in concurrent.futures.as_completed(future_to_path):
             path = future_to_path[future]
+            processed += 1
+            if total_files > 0:
+                progress = int((processed / total_files) * 100)
+                emit_ui_event("scan_progress", {"progress": progress, "message": f"Scanning {os.path.basename(path)}..."})
+                
             try:
                 # 4. Timeout Protection (3 seconds)
                 res_path, findings, sha = future.result(timeout=3.0)
@@ -1364,6 +1402,12 @@ def _render_device_type_menu(selected_index, usb_info):
 
 def prompt_declared_device_type(usb_info):
     """Ask the user to pick the inserted device type using arrow keys."""
+    if UI_MODE:
+        resp = prompt_ui("declare_device_type", {"device": usb_info})
+        if resp and "answer" in resp:
+            return normalize_device_type(resp["answer"])
+        return "other"
+        
     selected_index = 0
 
     if not sys.stdin.isatty():
@@ -1658,6 +1702,15 @@ def handle_usb_device(device):
         usb_info = analyze_descriptors(device)
         vid_pid = format_vid_pid(usb_info["vid"], usb_info["pid"])
 
+        emit_ui_event("device_detected", {
+            "vid": usb_info.get("vid", ""),
+            "pid": usb_info.get("pid", ""),
+            "name": usb_info.get("model", "USB Device"),
+            "manufacturer": usb_info.get("vendor", "Unknown"),
+            "serial": usb_info.get("serial", "Unknown"),
+            "usb_version": usb_info.get("usb_version", "2.0")
+        })
+
         declared_device_type = prompt_declared_device_type(usb_info)
         detected_device_type = detect_actual_device_type(device, usb_info)
 
@@ -1788,6 +1841,17 @@ def handle_usb_device(device):
         original_malware_detected = malware_detected
         original_total_risk = base_risk + storage_risk + hid_risk + policy_risk
 
+        emit_ui_event("scan_complete", {
+            "malware_detected": malware_detected,
+            "threats": len(all_malicious_files),
+            "files": len(file_hashes) if has_storage else 0,
+            "duration": "Completed",
+            "base_risk": base_risk,
+            "storage_risk": storage_risk,
+            "hid_risk": hid_risk,
+            "policy_risk": policy_risk
+        })
+
         trusted_storage = False
         storage_trust_invalidated = False
         storage_trust_entry = None
@@ -1883,7 +1947,11 @@ def handle_usb_device(device):
             print(Colors.CYAN + "  Note: Quarantined files are moved to a secure vault and can be" + Colors.END)
             print(Colors.CYAN + "  restored later if they turn out to be false positives." + Colors.END)
             print()
-            user_input = input(Colors.YELLOW + Colors.BOLD + "  Do you want to sanitize this drive? (y/n): " + Colors.END).strip().lower()
+            if UI_MODE:
+                resp = prompt_ui("sanitize_prompt", {"device": usb_info, "malicious_files": all_malicious_files})
+                user_input = resp.get("answer", "n") if resp else "n"
+            else:
+                user_input = input(Colors.YELLOW + Colors.BOLD + "  Do you want to sanitize this drive? (y/n): " + Colors.END).strip().lower()
 
             if user_input == 'y':
                 print()
@@ -2041,7 +2109,11 @@ def handle_usb_device(device):
             if detected_device_type in {"keyboard", "mouse"} and not sanitized and vid_pid not in HID_WHITELIST:
                 print()
                 while True:
-                    wl_input = input(Colors.YELLOW + f"  [*] Do you want to add this device ({vid_pid}) to the trusted whitelist? (y/n): " + Colors.END).strip().lower()
+                    if UI_MODE:
+                        resp = prompt_ui("trust_hid", {"vid_pid": vid_pid, "device": usb_info})
+                        wl_input = resp.get("answer", "n") if resp else "n"
+                    else:
+                        wl_input = input(Colors.YELLOW + f"  [*] Do you want to add this device ({vid_pid}) to the trusted whitelist? (y/n): " + Colors.END).strip().lower()
                     if wl_input in ['y', 'n']:
                         break
                 if wl_input == 'y':
@@ -2052,7 +2124,11 @@ def handle_usb_device(device):
             elif detected_device_type == "storage" and not sanitized and not trusted_storage:
                 print()
                 while True:
-                    wl_input = input(Colors.YELLOW + f"  [*] Trust this storage device for future fingerprint checks? (y/n): " + Colors.END).strip().lower()
+                    if UI_MODE:
+                        resp = prompt_ui("trust_storage", {"vid_pid": vid_pid, "device": usb_info})
+                        wl_input = resp.get("answer", "n") if resp else "n"
+                    else:
+                        wl_input = input(Colors.YELLOW + f"  [*] Trust this storage device for future fingerprint checks? (y/n): " + Colors.END).strip().lower()
                     if wl_input in ['y', 'n']:
                         break
                 if wl_input == 'y':
@@ -2725,6 +2801,10 @@ if __name__ == "__main__":
     import sys
     
     # ── CLI Arguments ─────────────────────────────────────────────────────
+    if "--ui-mode" in sys.argv:
+        UI_MODE = True
+        sys.stdout = sys.stderr  # Redirect standard prints to stderr to keep stdout clean for JSON IPC
+        
     if len(sys.argv) >= 2 and sys.argv[1] == "--history":
         show_history()
         sys.exit(0)

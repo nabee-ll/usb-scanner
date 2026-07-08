@@ -28,8 +28,12 @@ else
     echo "[!] Please run this script with sudo to disable USB automount popups."
 fi
 
-echo "[*] Starting USB Security Engine (Ctrl+C to stop)..."
-echo "[*] For storage accept/block enforcement and HID blocking, run with sudo: sudo $0"
+echo "[*] Starting USB Security Interface (Ctrl+C to stop)..."
+echo "[*] Note: The backend will automatically attempt to run with sudo."
 echo
 
-exec .venv/bin/python3 changed.py
+# Export environment so UI can find backend cleanly
+export PYTHONPATH="$ROOT"
+
+# Run the UI instead of the CLI
+exec .venv/bin/python3 ui/usb-scanner-ui/main_sys.py
