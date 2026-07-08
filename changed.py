@@ -1801,7 +1801,6 @@ def handle_usb_device(device):
                     storage_trust_invalidated = True
                     flags.append("Storage whitelist invalidated: serial or fingerprint changed")
                     invalidate_storage_trust(vid_pid, "storage trust changed")
-
         if type_mismatch:
             reason_str = (
                 f"declared type '{declared_device_type}' does not match detected type '{detected_device_type}'"
@@ -2026,7 +2025,8 @@ def handle_usb_device(device):
             # A base_risk of 1 or 2 (e.g., missing serial number) is common for cheap generic mice and shouldn't cause a strict block.
             safe_to_use = (hid_risk == 0 and base_risk < 8)
         else:
-            safe_to_use = sanitized or trusted_storage or (bool(scanned_paths) and not malware_detected and storage_risk == 0 and not storage_trust_invalidated)
+            # If the fingerprint changed, trusted_storage is False, so it falls back to checking the scan results!
+            safe_to_use = sanitized or trusted_storage or (bool(scanned_paths) and not malware_detected and storage_risk == 0)
             
         if safe_to_use:
             alert_device_clean(usb_info.get('model', 'USB Device'))
@@ -2049,7 +2049,7 @@ def handle_usb_device(device):
                     save_whitelist()
                     print(Colors.GREEN + f"  [+] Device {vid_pid} permanently added to whitelist." + Colors.END)
                 print()
-            elif detected_device_type == "storage" and not sanitized and not trusted_storage and not storage_trust_invalidated:
+            elif detected_device_type == "storage" and not sanitized and not trusted_storage:
                 print()
                 while True:
                     wl_input = input(Colors.YELLOW + f"  [*] Trust this storage device for future fingerprint checks? (y/n): " + Colors.END).strip().lower()
